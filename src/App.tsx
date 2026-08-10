@@ -1,4 +1,3 @@
-
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { supabase } from './supabaseClient';
 
@@ -68,6 +67,16 @@ export default function App() {
   const [editDescription, setEditDescription] = useState('');
   const [editCategory, setEditCategory] = useState('');
 
+  const [requestFirstName, setRequestFirstName] = useState('');
+  const [requestLastName, setRequestLastName] = useState('');
+  const [requestEmail, setRequestEmail] = useState('');
+  const [existingRequest, setExistingRequest] = useState<{ status: string } | null>(null);
+  const [requestSubmitted, setRequestSubmitted] = useState(false);
+  const [requestError, setRequestError] = useState('');
+
+  const [pendingRequests, setPendingRequests] = useState<{ id: string; email: string; first_name: string; last_name: string; status: string }[]>([]);
+  const [showRequestsPanel, setShowRequestsPanel] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ---- Auth bootstrap ----
@@ -90,6 +99,12 @@ export default function App() {
       loadCategories();
     }
   }, [session]);
+
+  useEffect(() => {
+    if (isAdmin) {
+      loadPendingRequests();
+    }
+  }, [isAdmin]);
 
   async function loadCategories() {
     const { data, error } = await supabase.from('categories').select('*').order('name');
@@ -191,6 +206,16 @@ export default function App() {
       setNotAllowed(ownRow ? 'disabled' : 'missing');
       setPhotos([]);
       setLoadingGallery(false);
+      if (!ownRow) {
+        const { data: reqRow } = await supabase
+          .from('access_requests')
+          .select('*')
+          .eq('email', session.user.email)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        setExistingRequest(reqRow ? { status: reqRow.status } : null);
+      }
       return;
     }
     setPhotos(data as PhotoRecord[]);
@@ -254,6 +279,56 @@ export default function App() {
       )
     );
     setEditingPhotoId(null);
+  }
+
+  async function submitAccessRequest(e: React.FormEvent) {
+    e.preventDefault();
+    setRequestError('');
+    const first = requestFirstName.trim();
+    const last = requestLastName.trim();
+    const email = requestEmail.trim();
+    if (!first || !last || !email) {
+      setRequestError('Enter your first name, last name, and email.');
+      return;
+    }
+    const { error } = await supabase.from('access_requests').insert({
+      email,
+      first_name: first,
+      last_name: last,
+    });
+    if (error) {
+      setRequestError(error.message);
+      return;
+    }
+    setRequestSubmitted(true);
+    setExistingRequest({ status: 'pending' });
+  }
+
+  async function loadPendingRequests() {
+    const { data, error } = await supabase
+      .from('access_requests')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true });
+    if (error || !data) return;
+    setPendingRequests(data as any);
+  }
+
+  async function approveRequest(r: { id: string; email: string; first_name: string; last_name: string }) {
+    await supabase.from('allowed_guests').insert({
+      email: r.email,
+      name: `${r.first_name} ${r.last_name}`.trim(),
+      is_admin: false,
+      is_disabled: false,
+    });
+    await supabase.from('access_requests').update({ status: 'approved' }).eq('id', r.id);
+    loadPendingRequests();
+    loadGuestInfo();
+  }
+
+  async function denyRequest(r: { id: string }) {
+    await supabase.from('access_requests').update({ status: 'denied' }).eq('id', r.id);
+    loadPendingRequests();
   }
 
   async function deletePhoto(p: PhotoRecord) {
@@ -503,6 +578,10 @@ export default function App() {
               <button className="linklike" onClick={() => setShowCategoryPanel((v) => !v)}>
                 {showCategoryPanel ? 'Hide categories' : 'Manage categories'}
               </button>
+              {' · '}
+              <button className="linklike" onClick={() => setShowRequestsPanel((v) => !v)}>
+                {showRequestsPanel ? 'Hide requests' : `Access requests${pendingRequests.length ? ` (${pendingRequests.length})` : ''}`}
+              </button>
             </>
           )}
         </div>
@@ -558,13 +637,42 @@ export default function App() {
         </div>
       )}
 
+      {isAdmin && showRequestsPanel && (
+        <div className="admin-panel">
+          <h3>Access requests</h3>
+          <div className="guest-rows">
+            {pendingRequests.map((r) => (
+              <div className="guest-row" key={r.id}>
+                <span className="guest-name">{r.first_name} {r.last_name}</span>
+                <span className="guest-email">{r.email}</span>
+                <button className="toggle-btn" onClick={() => approveRequest(r)}>Approve</button>
+                <button className="remove-btn" onClick={() => denyRequest(r)}>Deny</button>
+              </div>
+            ))}
+            {pendingRequests.length === 0 && <div className="photo-desc">No pending requests.</div>}
+          </div>
+        </div>
+      )}
+
       {notAllowed && (
         <div className="not-allowed">
           {notAllowed === 'disabled' ? (
             <>Your access to this album has been disabled. If that doesn't seem right, reach out to whoever manages the album.</>
+          ) : existingRequest?.status === 'pending' ? (
+            <>Your request is in! Someone will approve it soon — check back or refresh this page after a bit.</>
+          ) : existingRequest?.status === 'denied' ? (
+            <>Your request wasn't approved. If you think that's a mistake, reach out to whoever manages the album directly.</>
           ) : (
-            <>Your email isn't on the family guest list yet. Ask whoever set up the album to add{' '}
-            <strong>{session.user.email}</strong> to the allowed guest list, then refresh this page.</>
+            <div className="request-form-wrap">
+              <div>Your email isn't on the family guest list yet. Request access below.</div>
+              <form className="add-guest-form" onSubmit={submitAccessRequest}>
+                <input placeholder="First name" value={requestFirstName} onChange={(e) => setRequestFirstName(e.target.value)} />
+                <input placeholder="Last name" value={requestLastName} onChange={(e) => setRequestLastName(e.target.value)} />
+                <input type="email" placeholder="Email address" value={requestEmail} onChange={(e) => setRequestEmail(e.target.value)} />
+                <button className="btn-upload" type="submit">Request access</button>
+              </form>
+              {requestError && <div className="gate-error">{requestError}</div>}
+            </div>
           )}
         </div>
       )}
