@@ -15,6 +15,29 @@ interface PhotoRecord {
   created_at: string;
 }
 
+interface DirectoryEntry {
+  email: string;
+  name: string;
+}
+
+interface GroupRecord {
+  id: string;
+  name: string;
+  created_by: string;
+}
+
+interface MessageRecord {
+  id: string;
+  sender_email: string;
+  recipient_email: string | null;
+  group_id: string | null;
+  photo_id: string | null;
+  body: string;
+  created_at: string;
+}
+
+type ThreadRef = { type: 'dm' | 'group'; id: string; label: string };
+
 const CONFIG = {
   HEADLINE: 'Share Your Photos & Videos From The Big Day',
   COUPLE: 'The Newlyweds',
@@ -77,6 +100,20 @@ export default function App() {
   const [pendingRequests, setPendingRequests] = useState<{ id: string; email: string; first_name: string; last_name: string; status: string }[]>([]);
   const [showRequestsPanel, setShowRequestsPanel] = useState(false);
 
+  const [showMessagesPanel, setShowMessagesPanel] = useState(false);
+  const [directory, setDirectory] = useState<DirectoryEntry[]>([]);
+  const [groups, setGroups] = useState<GroupRecord[]>([]);
+  const [selectedThread, setSelectedThread] = useState<ThreadRef | null>(null);
+  const [threadMessages, setThreadMessages] = useState<MessageRecord[]>([]);
+  const [newMessageBody, setNewMessageBody] = useState('');
+  const [showNewGroupForm, setShowNewGroupForm] = useState(false);
+  const [newGroupName, setNewGroupName] = useState('');
+  const [newGroupMembers, setNewGroupMembers] = useState<string[]>([]);
+  const [messagesError, setMessagesError] = useState('');
+
+  const [photoComments, setPhotoComments] = useState<MessageRecord[]>([]);
+  const [newCommentBody, setNewCommentBody] = useState('');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ---- Auth bootstrap ----
@@ -97,6 +134,8 @@ export default function App() {
       loadPhotos();
       loadGuestInfo();
       loadCategories();
+      loadDirectory();
+      loadGroups();
     }
   }, [session]);
 
@@ -231,6 +270,141 @@ export default function App() {
       if (signed?.signedUrl) {
         setPreviewUrls((prev) => ({ ...prev, [p.id]: signed.signedUrl }));
       }
+    }
+  }
+
+  // ---- Messaging: directory, groups, threads, photo comments ----
+  async function loadDirectory() {
+    const { data, error } = await supabase.from('allowed_guests').select('email,name,is_disabled');
+    if (error || !data) return;
+    setDirectory(
+      (data as any[])
+        .filter((g) => !g.is_disabled && g.email !== session.user.email)
+        .map((g) => ({ email: g.email, name: g.name || g.email }))
+    );
+  }
+
+  async function loadGroups() {
+    const { data: memberRows, error: memberErr } = await supabase
+      .from('group_members')
+      .select('group_id')
+      .eq('email', session.user.email);
+    if (memberErr || !memberRows || memberRows.length === 0) {
+      setGroups([]);
+      return;
+    }
+    const ids = memberRows.map((r: any) => r.group_id);
+    const { data, error } = await supabase.from('groups').select('*').in('id', ids);
+    if (error || !data) return;
+    setGroups(data as GroupRecord[]);
+  }
+
+  function nameFor(email: string) {
+    if (email === session.user.email) return 'You';
+    return directory.find((d) => d.email === email)?.name || email;
+  }
+
+  async function openThread(ref: ThreadRef) {
+    setMessagesError('');
+    setSelectedThread(ref);
+    setThreadMessages([]);
+    if (ref.type === 'dm') {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .is('group_id', null)
+        .is('photo_id', null)
+        .or(
+          `and(sender_email.eq.${session.user.email},recipient_email.eq.${ref.id}),and(sender_email.eq.${ref.id},recipient_email.eq.${session.user.email})`
+        )
+        .order('created_at', { ascending: true });
+      if (error) {
+        setMessagesError(error.message);
+        return;
+      }
+      setThreadMessages((data as MessageRecord[]) || []);
+    } else {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('group_id', ref.id)
+        .order('created_at', { ascending: true });
+      if (error) {
+        setMessagesError(error.message);
+        return;
+      }
+      setThreadMessages((data as MessageRecord[]) || []);
+    }
+  }
+
+  async function sendThreadMessage(e: React.FormEvent) {
+    e.preventDefault();
+    const body = newMessageBody.trim();
+    if (!body || !selectedThread) return;
+    const row: any = { sender_email: session.user.email, body };
+    if (selectedThread.type === 'dm') row.recipient_email = selectedThread.id;
+    else row.group_id = selectedThread.id;
+    const { error } = await supabase.from('messages').insert(row);
+    if (error) {
+      setMessagesError(error.message);
+      return;
+    }
+    setNewMessageBody('');
+    openThread(selectedThread);
+  }
+
+  function toggleGroupMember(email: string) {
+    setNewGroupMembers((prev) => (prev.includes(email) ? prev.filter((x) => x !== email) : [...prev, email]));
+  }
+
+  async function createGroup(e: React.FormEvent) {
+    e.preventDefault();
+    setMessagesError('');
+    const name = newGroupName.trim();
+    if (!name) {
+      setMessagesError('Give the group a name.');
+      return;
+    }
+    const { data, error } = await supabase
+      .from('groups')
+      .insert({ name, created_by: session.user.email })
+      .select()
+      .single();
+    if (error || !data) {
+      setMessagesError(error?.message || 'Could not create group.');
+      return;
+    }
+    const memberRows = [session.user.email, ...newGroupMembers].map((email) => ({
+      group_id: data.id,
+      email,
+    }));
+    await supabase.from('group_members').insert(memberRows);
+    setNewGroupName('');
+    setNewGroupMembers([]);
+    setShowNewGroupForm(false);
+    loadGroups();
+  }
+
+  async function loadPhotoComments(photoId: string) {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('photo_id', photoId)
+      .order('created_at', { ascending: true });
+    if (error || !data) return;
+    setPhotoComments(data as MessageRecord[]);
+  }
+
+  async function sendPhotoComment(e: React.FormEvent) {
+    e.preventDefault();
+    const body = newCommentBody.trim();
+    if (!body || !lightbox) return;
+    const { error } = await supabase
+      .from('messages')
+      .insert({ sender_email: session.user.email, photo_id: lightbox.id, body });
+    if (!error) {
+      setNewCommentBody('');
+      loadPhotoComments(lightbox.id);
     }
   }
 
@@ -463,8 +637,11 @@ export default function App() {
 
   async function openLightbox(p: PhotoRecord) {
     setLightbox(p);
+    setPhotoComments([]);
+    setNewCommentBody('');
     const url = await getSignedUrl('originals', p.original_path);
     setLightboxUrl(url);
+    loadPhotoComments(p.id);
   }
 
   async function downloadOriginal(p: PhotoRecord) {
@@ -568,6 +745,10 @@ export default function App() {
           Signed in as {session.user.user_metadata?.display_name || session.user.email}
           {' · '}
           <button className="linklike" onClick={() => supabase.auth.signOut()}>Sign out</button>
+          {' · '}
+          <button className="linklike" onClick={() => setShowMessagesPanel((v) => !v)}>
+            {showMessagesPanel ? 'Hide messages' : 'Messages'}
+          </button>
           {isAdmin && (
             <>
               {' · '}
@@ -586,6 +767,103 @@ export default function App() {
           )}
         </div>
       </div>
+
+      {showMessagesPanel && (
+        <div className="admin-panel messages-panel">
+          <h3>Messages</h3>
+          <div className="messages-layout">
+            <div className="thread-list">
+              <div className="thread-list-heading">Direct messages</div>
+              {directory.map((d) => (
+                <button
+                  key={d.email}
+                  className={
+                    'thread-item' +
+                    (selectedThread?.type === 'dm' && selectedThread.id === d.email ? ' active' : '')
+                  }
+                  onClick={() => openThread({ type: 'dm', id: d.email, label: d.name })}
+                >
+                  {d.name}
+                </button>
+              ))}
+              {directory.length === 0 && <div className="photo-desc">No other guests yet.</div>}
+
+              <div className="thread-list-heading">Groups</div>
+              {groups.map((g) => (
+                <button
+                  key={g.id}
+                  className={
+                    'thread-item' +
+                    (selectedThread?.type === 'group' && selectedThread.id === g.id ? ' active' : '')
+                  }
+                  onClick={() => openThread({ type: 'group', id: g.id, label: g.name })}
+                >
+                  {g.name}
+                </button>
+              ))}
+              <button className="linklike" onClick={() => setShowNewGroupForm((v) => !v)}>
+                {showNewGroupForm ? 'Cancel' : '+ New group'}
+              </button>
+
+              {showNewGroupForm && (
+                <form className="new-group-form" onSubmit={createGroup}>
+                  <input
+                    placeholder="Group name (e.g. Anderson Cousins)"
+                    value={newGroupName}
+                    onChange={(e) => setNewGroupName(e.target.value)}
+                  />
+                  <div className="member-checkboxes">
+                    {directory.map((d) => (
+                      <label key={d.email} className="member-check">
+                        <input
+                          type="checkbox"
+                          checked={newGroupMembers.includes(d.email)}
+                          onChange={() => toggleGroupMember(d.email)}
+                        />
+                        {d.name}
+                      </label>
+                    ))}
+                  </div>
+                  <button className="btn-upload" type="submit">Create group</button>
+                </form>
+              )}
+              {messagesError && <div className="gate-error">{messagesError}</div>}
+            </div>
+
+            <div className="thread-view">
+              {!selectedThread && <div className="photo-desc">Pick a person or group to start chatting.</div>}
+              {selectedThread && (
+                <>
+                  <div className="thread-header">{selectedThread.label}</div>
+                  <div className="thread-messages">
+                    {threadMessages.map((m) => (
+                      <div
+                        key={m.id}
+                        className={'msg-bubble' + (m.sender_email === session.user.email ? ' mine' : '')}
+                      >
+                        <div className="msg-sender">{nameFor(m.sender_email)}</div>
+                        <div className="msg-body">{m.body}</div>
+                        <div className="msg-time">{new Date(m.created_at).toLocaleString()}</div>
+                      </div>
+                    ))}
+                    {threadMessages.length === 0 && (
+                      <div className="photo-desc">No messages yet — say hi!</div>
+                    )}
+                  </div>
+                  <form className="thread-compose" onSubmit={sendThreadMessage}>
+                    <input
+                      placeholder="Type a message…"
+                      value={newMessageBody}
+                      onChange={(e) => setNewMessageBody(e.target.value)}
+                    />
+                    <button className="btn-upload" type="submit">Send</button>
+                  </form>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {isAdmin && showAdminPanel && (
         <div className="admin-panel">
@@ -863,6 +1141,26 @@ export default function App() {
               {lightbox.preview_path && <button onClick={() => downloadPreview(lightbox)}>Download web-size</button>}
               {canEditOrDelete(lightbox) && <button className="delete-photo-btn" onClick={() => deletePhoto(lightbox)}>Delete</button>}
               <button className="close-btn" onClick={() => { setLightbox(null); setLightboxUrl(''); }}>Close</button>
+            </div>
+
+            <div className="lightbox-comments">
+              <h4>Comments</h4>
+              <div className="comment-list">
+                {photoComments.map((c) => (
+                  <div key={c.id} className="comment-item">
+                    <span className="comment-sender">{nameFor(c.sender_email)}:</span> {c.body}
+                  </div>
+                ))}
+                {photoComments.length === 0 && <div className="photo-desc">No comments yet.</div>}
+              </div>
+              <form className="comment-form" onSubmit={sendPhotoComment}>
+                <input
+                  placeholder="Add a comment…"
+                  value={newCommentBody}
+                  onChange={(e) => setNewCommentBody(e.target.value)}
+                />
+                <button className="btn-upload" type="submit">Post</button>
+              </form>
             </div>
           </div>
         </div>
