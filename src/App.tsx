@@ -52,6 +52,8 @@ export default function App() {
   const [newGuestName, setNewGuestName] = useState('');
   const [guestError, setGuestError] = useState('');
 
+  const [isDragOver, setIsDragOver] = useState(false);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ---- Auth bootstrap ----
@@ -464,8 +466,21 @@ export default function App() {
       {!notAllowed && (
         <>
           <div className="upload-zone">
-            <div className="upload-box">
-              <p>Add a description for this batch (optional), then choose files</p>
+            <div
+              className={`upload-box${isDragOver ? ' dragover' : ''}`}
+              onDragEnter={(e) => { e.preventDefault(); setIsDragOver(true); }}
+              onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+              onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragOver(false);
+                const files = Array.from(e.dataTransfer.files || []).filter(
+                  (f) => f.type.startsWith('image/') || f.type.startsWith('video/')
+                );
+                handleFiles(files);
+              }}
+            >
+              <p>Drag photos or videos here, or add a description and choose files below</p>
               <input
                 className="desc-input"
                 placeholder="e.g. First dance"
