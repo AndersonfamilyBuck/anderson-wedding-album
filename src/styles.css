@@ -127,3 +127,6 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
 .comment-sender{ color:var(--gold); font-weight:600; }
 .comment-form{ display:flex; gap:8px; }
 .comment-form input{ flex:1; padding:8px 10px; border-radius:3px; border:1px solid rgba(201,166,107,0.4); background:rgba(255,255,255,0.9); color:var(--ink); font-size:13px; }
+
+.msg-edit-row{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.msg-edit-row input{ flex:1; min-width:120px; padding:6px 8px; border-radius:3px; border:1px solid rgba(201,166,107,0.4); background:rgba(255,255,255,0.9); color:var(--ink); font-size:13px; }
