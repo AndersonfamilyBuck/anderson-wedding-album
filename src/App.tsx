@@ -114,6 +114,8 @@ export default function App() {
   const [editMessageBody, setEditMessageBody] = useState('');
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editCommentBody, setEditCommentBody] = useState('');
+  const [renamingGroup, setRenamingGroup] = useState(false);
+  const [renameGroupName, setRenameGroupName] = useState('');
 
   const [photoComments, setPhotoComments] = useState<MessageRecord[]>([]);
   const [newCommentBody, setNewCommentBody] = useState('');
@@ -470,6 +472,52 @@ export default function App() {
     if (!error) {
       setPhotoComments((prev) => prev.filter((x) => x.id !== c.id));
     }
+  }
+
+  function currentGroup(): GroupRecord | undefined {
+    return selectedThread?.type === 'group' ? groups.find((g) => g.id === selectedThread.id) : undefined;
+  }
+
+  function startRenameGroup() {
+    const g = currentGroup();
+    if (!g) return;
+    setRenamingGroup(true);
+    setRenameGroupName(g.name);
+  }
+
+  function cancelRenameGroup() {
+    setRenamingGroup(false);
+    setRenameGroupName('');
+  }
+
+  async function saveRenameGroup() {
+    const g = currentGroup();
+    if (!g) return;
+    const name = renameGroupName.trim();
+    if (!name) return;
+    const { error } = await supabase.from('groups').update({ name }).eq('id', g.id);
+    if (error) {
+      setMessagesError(error.message);
+      return;
+    }
+    setGroups((prev) => prev.map((x) => (x.id === g.id ? { ...x, name } : x)));
+    setSelectedThread((prev) => (prev ? { ...prev, label: name } : prev));
+    setRenamingGroup(false);
+  }
+
+  async function deleteGroup() {
+    const g = currentGroup();
+    if (!g) return;
+    const ok = window.confirm(`Delete the group "${g.name}"? This removes it for everyone and can't be undone.`);
+    if (!ok) return;
+    const { error } = await supabase.from('groups').delete().eq('id', g.id);
+    if (error) {
+      setMessagesError(error.message);
+      return;
+    }
+    setGroups((prev) => prev.filter((x) => x.id !== g.id));
+    setSelectedThread(null);
+    setThreadMessages([]);
   }
 
   async function toggleGuestDisabled(email: string, current: boolean) {
@@ -898,7 +946,30 @@ export default function App() {
               {!selectedThread && <div className="photo-desc">Pick a person or group to start chatting.</div>}
               {selectedThread && (
                 <>
-                  <div className="thread-header">{selectedThread.label}</div>
+                  <div className="thread-header">
+                    {selectedThread.type === 'group' && renamingGroup ? (
+                      <div className="msg-edit-row">
+                        <input
+                          value={renameGroupName}
+                          onChange={(e) => setRenameGroupName(e.target.value)}
+                        />
+                        <button className="linklike" onClick={saveRenameGroup}>Save</button>
+                        <button className="linklike" onClick={cancelRenameGroup}>Cancel</button>
+                      </div>
+                    ) : (
+                      <>
+                        {selectedThread.label}
+                        {selectedThread.type === 'group' && currentGroup()?.created_by === session.user.email && (
+                          <>
+                            {' '}
+                            <button className="linklike" onClick={startRenameGroup}>Rename</button>
+                            {' · '}
+                            <button className="linklike" onClick={deleteGroup}>Delete group</button>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
                   <div className="thread-messages">
                     {threadMessages.map((m) => (
                       <div
