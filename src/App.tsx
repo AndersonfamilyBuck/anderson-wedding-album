@@ -110,6 +110,10 @@ export default function App() {
   const [newGroupName, setNewGroupName] = useState('');
   const [newGroupMembers, setNewGroupMembers] = useState<string[]>([]);
   const [messagesError, setMessagesError] = useState('');
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editMessageBody, setEditMessageBody] = useState('');
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
+  const [editCommentBody, setEditCommentBody] = useState('');
 
   const [photoComments, setPhotoComments] = useState<MessageRecord[]>([]);
   const [newCommentBody, setNewCommentBody] = useState('');
@@ -405,6 +409,66 @@ export default function App() {
     if (!error) {
       setNewCommentBody('');
       loadPhotoComments(lightbox.id);
+    }
+  }
+
+  function startEditMessage(m: MessageRecord) {
+    setEditingMessageId(m.id);
+    setEditMessageBody(m.body);
+  }
+
+  function cancelEditMessage() {
+    setEditingMessageId(null);
+    setEditMessageBody('');
+  }
+
+  async function saveEditMessage(m: MessageRecord) {
+    const body = editMessageBody.trim();
+    if (!body) return;
+    const { error } = await supabase.from('messages').update({ body }).eq('id', m.id);
+    if (error) {
+      setMessagesError(error.message);
+      return;
+    }
+    setThreadMessages((prev) => prev.map((x) => (x.id === m.id ? { ...x, body } : x)));
+    setEditingMessageId(null);
+  }
+
+  async function deleteMessage(m: MessageRecord) {
+    const ok = window.confirm("Delete this message? This can't be undone.");
+    if (!ok) return;
+    const { error } = await supabase.from('messages').delete().eq('id', m.id);
+    if (!error) {
+      setThreadMessages((prev) => prev.filter((x) => x.id !== m.id));
+    }
+  }
+
+  function startEditComment(c: MessageRecord) {
+    setEditingCommentId(c.id);
+    setEditCommentBody(c.body);
+  }
+
+  function cancelEditComment() {
+    setEditingCommentId(null);
+    setEditCommentBody('');
+  }
+
+  async function saveEditComment(c: MessageRecord) {
+    const body = editCommentBody.trim();
+    if (!body) return;
+    const { error } = await supabase.from('messages').update({ body }).eq('id', c.id);
+    if (!error) {
+      setPhotoComments((prev) => prev.map((x) => (x.id === c.id ? { ...x, body } : x)));
+      setEditingCommentId(null);
+    }
+  }
+
+  async function deleteComment(c: MessageRecord) {
+    const ok = window.confirm("Delete this comment? This can't be undone.");
+    if (!ok) return;
+    const { error } = await supabase.from('messages').delete().eq('id', c.id);
+    if (!error) {
+      setPhotoComments((prev) => prev.filter((x) => x.id !== c.id));
     }
   }
 
@@ -842,8 +906,31 @@ export default function App() {
                         className={'msg-bubble' + (m.sender_email === session.user.email ? ' mine' : '')}
                       >
                         <div className="msg-sender">{nameFor(m.sender_email)}</div>
-                        <div className="msg-body">{m.body}</div>
-                        <div className="msg-time">{new Date(m.created_at).toLocaleString()}</div>
+                        {editingMessageId === m.id ? (
+                          <div className="msg-edit-row">
+                            <input
+                              value={editMessageBody}
+                              onChange={(e) => setEditMessageBody(e.target.value)}
+                            />
+                            <button className="linklike" onClick={() => saveEditMessage(m)}>Save</button>
+                            <button className="linklike" onClick={cancelEditMessage}>Cancel</button>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="msg-body">{m.body}</div>
+                            <div className="msg-time">
+                              {new Date(m.created_at).toLocaleString()}
+                              {m.sender_email === session.user.email && (
+                                <>
+                                  {' · '}
+                                  <button className="linklike" onClick={() => startEditMessage(m)}>Edit</button>
+                                  {' · '}
+                                  <button className="linklike" onClick={() => deleteMessage(m)}>Delete</button>
+                                </>
+                              )}
+                            </div>
+                          </>
+                        )}
                       </div>
                     ))}
                     {threadMessages.length === 0 && (
@@ -935,11 +1022,11 @@ export default function App() {
       {notAllowed && (
         <div className="not-allowed">
           {notAllowed === 'disabled' ? (
-            <>Your access to this album has been disabled. If that doesn't seem right, reach out to whoever manages the album.</>
+            <>Your access to this album has been disabled. If that doesn't seem right, reach out to Buck at buck@heatapplied.com or 201-962-0305.</>
           ) : existingRequest?.status === 'pending' ? (
             <>Your request is in! Someone will approve it soon — check back or refresh this page after a bit.</>
           ) : existingRequest?.status === 'denied' ? (
-            <>Your request wasn't approved. If you think that's a mistake, reach out to whoever manages the album directly.</>
+            <>Your request wasn't approved. If you think that's a mistake, reach out to Buck at buck@heatapplied.com or 201-962-0305.</>
           ) : (
             <div className="request-form-wrap">
               <div>Your email isn't on the family guest list yet. Request access below.</div>
@@ -1148,7 +1235,28 @@ export default function App() {
               <div className="comment-list">
                 {photoComments.map((c) => (
                   <div key={c.id} className="comment-item">
-                    <span className="comment-sender">{nameFor(c.sender_email)}:</span> {c.body}
+                    {editingCommentId === c.id ? (
+                      <div className="msg-edit-row">
+                        <input
+                          value={editCommentBody}
+                          onChange={(e) => setEditCommentBody(e.target.value)}
+                        />
+                        <button className="linklike" onClick={() => saveEditComment(c)}>Save</button>
+                        <button className="linklike" onClick={cancelEditComment}>Cancel</button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className="comment-sender">{nameFor(c.sender_email)}:</span> {c.body}
+                        {c.sender_email === session.user.email && (
+                          <>
+                            {' '}
+                            <button className="linklike" onClick={() => startEditComment(c)}>Edit</button>
+                            {' · '}
+                            <button className="linklike" onClick={() => deleteComment(c)}>Delete</button>
+                          </>
+                        )}
+                      </>
+                    )}
                   </div>
                 ))}
                 {photoComments.length === 0 && <div className="photo-desc">No comments yet.</div>}
