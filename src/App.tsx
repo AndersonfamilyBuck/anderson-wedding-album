@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState, useRef } from 'react';
 import { supabase } from './supabaseClient';
 
@@ -9,6 +10,7 @@ interface PhotoRecord {
   uploader_name: string;
   media_type: MediaType;
   description: string;
+  category: string | null;
   original_path: string;
   preview_path: string | null;
   created_at: string;
@@ -54,6 +56,18 @@ export default function App() {
 
   const [isDragOver, setIsDragOver] = useState(false);
 
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all');
+  const [showCategoryPanel, setShowCategoryPanel] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [categoryError, setCategoryError] = useState('');
+
+  const [editingPhotoId, setEditingPhotoId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ---- Auth bootstrap ----
@@ -73,8 +87,34 @@ export default function App() {
     if (session) {
       loadPhotos();
       loadGuestInfo();
+      loadCategories();
     }
   }, [session]);
+
+  async function loadCategories() {
+    const { data, error } = await supabase.from('categories').select('*').order('name');
+    if (error || !data) return;
+    setCategories(data as any);
+  }
+
+  async function addCategory(e: React.FormEvent) {
+    e.preventDefault();
+    setCategoryError('');
+    const name = newCategoryName.trim();
+    if (!name) return;
+    const { error } = await supabase.from('categories').insert({ name });
+    if (error) {
+      setCategoryError(error.message);
+      return;
+    }
+    setNewCategoryName('');
+    loadCategories();
+  }
+
+  async function removeCategory(id: string) {
+    await supabase.from('categories').delete().eq('id', id);
+    loadCategories();
+  }
 
   async function loadGuestInfo() {
     const { data, error } = await supabase.from('allowed_guests').select('*');
@@ -176,6 +216,44 @@ export default function App() {
     }
     await supabase.from('allowed_guests').update({ is_disabled: !current }).eq('email', email);
     loadGuestInfo();
+  }
+
+  function canEditOrDelete(p: PhotoRecord) {
+    return isAdmin || p.uploader_email === session?.user?.email;
+  }
+
+  function startEdit(p: PhotoRecord) {
+    setEditingPhotoId(p.id);
+    setEditName(p.uploader_name);
+    setEditDescription(p.description || '');
+    setEditCategory(p.category || '');
+  }
+
+  function cancelEdit() {
+    setEditingPhotoId(null);
+  }
+
+  async function saveEdit(p: PhotoRecord) {
+    const { error } = await supabase
+      .from('photos')
+      .update({
+        uploader_name: editName.trim() || p.uploader_name,
+        description: editDescription.trim(),
+        category: editCategory || null,
+      })
+      .eq('id', p.id);
+    if (error) {
+      console.error(error);
+      return;
+    }
+    setPhotos((prev) =>
+      prev.map((x) =>
+        x.id === p.id
+          ? { ...x, uploader_name: editName.trim() || p.uploader_name, description: editDescription.trim(), category: editCategory || null }
+          : x
+      )
+    );
+    setEditingPhotoId(null);
   }
 
   async function deletePhoto(p: PhotoRecord) {
@@ -294,6 +372,7 @@ export default function App() {
           uploader_name: displayName,
           media_type: mediaType,
           description: batchDescription.trim(),
+          category: selectedCategory || null,
           original_path: originalPath,
           preview_path: previewPath,
         });
@@ -343,6 +422,9 @@ export default function App() {
     if (uploaderFilter !== 'all') {
       list = list.filter((p) => p.uploader_name === uploaderFilter);
     }
+    if (categoryFilter !== 'all') {
+      list = list.filter((p) => (p.category || '') === categoryFilter);
+    }
     if (searchText.trim()) {
       const q = searchText.trim().toLowerCase();
       list = list.filter(
@@ -359,7 +441,7 @@ export default function App() {
       list.sort((a, b) => a.uploader_name.localeCompare(b.uploader_name));
     }
     return list;
-  }, [photos, uploaderFilter, searchText, sortOrder]);
+  }, [photos, uploaderFilter, categoryFilter, searchText, sortOrder]);
 
   // ---------------- Render ----------------
   if (authLoading) {
@@ -417,6 +499,10 @@ export default function App() {
               <button className="linklike" onClick={() => setShowAdminPanel((v) => !v)}>
                 {showAdminPanel ? 'Hide guest list' : 'Manage guest list'}
               </button>
+              {' · '}
+              <button className="linklike" onClick={() => setShowCategoryPanel((v) => !v)}>
+                {showCategoryPanel ? 'Hide categories' : 'Manage categories'}
+              </button>
             </>
           )}
         </div>
@@ -449,6 +535,26 @@ export default function App() {
             <button className="btn-upload" type="submit">Add to guest list</button>
           </form>
           {guestError && <div className="gate-error">{guestError}</div>}
+        </div>
+      )}
+
+      {isAdmin && showCategoryPanel && (
+        <div className="admin-panel">
+          <h3>Categories</h3>
+          <div className="guest-rows">
+            {categories.map((c) => (
+              <div className="guest-row" key={c.id}>
+                <span className="guest-name">{c.name}</span>
+                <button className="remove-btn" onClick={() => removeCategory(c.id)}>Remove</button>
+              </div>
+            ))}
+            {categories.length === 0 && <div className="photo-desc">No categories yet.</div>}
+          </div>
+          <form className="add-guest-form" onSubmit={addCategory}>
+            <input placeholder="e.g. Ceremony" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} />
+            <button className="btn-upload" type="submit">Add category</button>
+          </form>
+          {categoryError && <div className="gate-error">{categoryError}</div>}
         </div>
       )}
 
@@ -487,6 +593,18 @@ export default function App() {
                 value={batchDescription}
                 onChange={(e) => setBatchDescription(e.target.value)}
               />
+              {categories.length > 0 && (
+                <select
+                  className="desc-input"
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                >
+                  <option value="">No category</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.name}>{c.name}</option>
+                  ))}
+                </select>
+              )}
               <button className="btn-upload" onClick={() => fileInputRef.current?.click()}>
                 Choose photos or videos
               </button>
@@ -514,6 +632,14 @@ export default function App() {
                 <option key={n} value={n}>{n}</option>
               ))}
             </select>
+            {categories.length > 0 && (
+              <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)}>
+                <option value="all">All categories</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.name}>{c.name}</option>
+                ))}
+              </select>
+            )}
             <input
               className="search-input"
               placeholder="Search descriptions or names…"
@@ -539,7 +665,7 @@ export default function App() {
               <div className="grid">
                 {filteredPhotos.map((p) => (
                   <div className="photo-card" key={p.id}>
-                    <div className="photo-frame" onClick={() => openLightbox(p)}>
+                    <div className="photo-frame" onClick={() => editingPhotoId !== p.id && openLightbox(p)}>
                       {previewUrls[p.id] ? (
                         <img src={previewUrls[p.id]} alt={p.description || 'wedding photo'} />
                       ) : (
@@ -547,17 +673,57 @@ export default function App() {
                       )}
                       {p.media_type === 'video' && <div className="play-badge">▶</div>}
                     </div>
-                    <div className="photo-meta">
-                      <span className="who">{p.uploader_name}</span>
-                      <span className="when">{new Date(p.created_at).toLocaleDateString()}</span>
-                    </div>
-                    {p.description && <div className="photo-desc">{p.description}</div>}
-                    <div className="download-row">
-                      <button onClick={() => downloadOriginal(p)}>High-res</button>
-                      {p.preview_path && <button onClick={() => downloadPreview(p)}>Web-size</button>}
-                    </div>
-                    {isAdmin && (
-                      <button className="delete-photo-btn" onClick={() => deletePhoto(p)}>Delete</button>
+
+                    {editingPhotoId === p.id ? (
+                      <div className="edit-form" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          className="desc-input"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          placeholder="Name"
+                        />
+                        <input
+                          className="desc-input"
+                          value={editDescription}
+                          onChange={(e) => setEditDescription(e.target.value)}
+                          placeholder="Description"
+                        />
+                        {categories.length > 0 && (
+                          <select
+                            className="desc-input"
+                            value={editCategory}
+                            onChange={(e) => setEditCategory(e.target.value)}
+                          >
+                            <option value="">No category</option>
+                            {categories.map((c) => (
+                              <option key={c.id} value={c.name}>{c.name}</option>
+                            ))}
+                          </select>
+                        )}
+                        <div className="download-row">
+                          <button onClick={() => saveEdit(p)}>Save</button>
+                          <button onClick={cancelEdit}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="photo-meta">
+                          <span className="who">{p.uploader_name}</span>
+                          <span className="when">{new Date(p.created_at).toLocaleDateString()}</span>
+                        </div>
+                        {p.category && <div className="photo-desc">📁 {p.category}</div>}
+                        {p.description && <div className="photo-desc">{p.description}</div>}
+                        <div className="download-row">
+                          <button onClick={() => downloadOriginal(p)}>High-res</button>
+                          {p.preview_path && <button onClick={() => downloadPreview(p)}>Web-size</button>}
+                        </div>
+                        {canEditOrDelete(p) && (
+                          <div className="download-row">
+                            <button onClick={() => startEdit(p)}>Edit</button>
+                            <button className="delete-photo-btn" onClick={() => deletePhoto(p)}>Delete</button>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 ))}
@@ -581,12 +747,13 @@ export default function App() {
             )}
             <div className="lightbox-meta">
               {lightbox.uploader_name} · {new Date(lightbox.created_at).toLocaleString()}
+              {lightbox.category ? ` · 📁 ${lightbox.category}` : ''}
               {lightbox.description ? ` · ${lightbox.description}` : ''}
             </div>
             <div className="lightbox-actions">
               <button onClick={() => downloadOriginal(lightbox)}>Download high-res</button>
               {lightbox.preview_path && <button onClick={() => downloadPreview(lightbox)}>Download web-size</button>}
-              {isAdmin && <button className="delete-photo-btn" onClick={() => deletePhoto(lightbox)}>Delete</button>}
+              {canEditOrDelete(lightbox) && <button className="delete-photo-btn" onClick={() => deletePhoto(lightbox)}>Delete</button>}
               <button className="close-btn" onClick={() => { setLightbox(null); setLightboxUrl(''); }}>Close</button>
             </div>
           </div>
