@@ -117,6 +117,17 @@ export default function App() {
   const [renamingGroup, setRenamingGroup] = useState(false);
   const [renameGroupName, setRenameGroupName] = useState('');
 
+  const [showMyPhotosPanel, setShowMyPhotosPanel] = useState(false);
+  const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
+  const [activeFolderId, setActiveFolderId] = useState<string | null>(null);
+  const [folderPhotoIds, setFolderPhotoIds] = useState<string[]>([]);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
+  const [renameFolderName, setRenameFolderName] = useState('');
+  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+  const [myPhotosFilter, setMyPhotosFilter] = useState<'mine' | 'all'>('mine');
+  const [addToFolderChoice, setAddToFolderChoice] = useState('');
+
   const [photoComments, setPhotoComments] = useState<MessageRecord[]>([]);
   const [newCommentBody, setNewCommentBody] = useState('');
 
@@ -142,6 +153,7 @@ export default function App() {
       loadCategories();
       loadDirectory();
       loadGroups();
+      loadFolders();
     }
   }, [session]);
 
@@ -520,6 +532,97 @@ export default function App() {
     setThreadMessages([]);
   }
 
+  // ---- My Photos: folders ----
+  async function loadFolders() {
+    const { data, error } = await supabase
+      .from('photo_folders')
+      .select('*')
+      .order('created_at', { ascending: true });
+    if (error || !data) return;
+    setFolders((data as any[]).map((f) => ({ id: f.id, name: f.name })));
+  }
+
+  async function createFolder(e: React.FormEvent) {
+    e.preventDefault();
+    const name = newFolderName.trim();
+    if (!name) return;
+    const { error } = await supabase
+      .from('photo_folders')
+      .insert({ owner_email: session.user.email, name });
+    if (!error) {
+      setNewFolderName('');
+      loadFolders();
+    }
+  }
+
+  function startRenameFolder(f: { id: string; name: string }) {
+    setRenamingFolderId(f.id);
+    setRenameFolderName(f.name);
+  }
+
+  async function saveRenameFolder() {
+    const name = renameFolderName.trim();
+    if (!name || !renamingFolderId) return;
+    const { error } = await supabase
+      .from('photo_folders')
+      .update({ name })
+      .eq('id', renamingFolderId);
+    if (!error) {
+      setFolders((prev) => prev.map((f) => (f.id === renamingFolderId ? { ...f, name } : f)));
+      setRenamingFolderId(null);
+    }
+  }
+
+  async function deleteFolder(folderId: string) {
+    const ok = window.confirm(
+      "Delete this folder? The photos inside will stay in the gallery — only the folder organization goes away."
+    );
+    if (!ok) return;
+    const { error } = await supabase.from('photo_folders').delete().eq('id', folderId);
+    if (!error) {
+      setFolders((prev) => prev.filter((f) => f.id !== folderId));
+      if (activeFolderId === folderId) {
+        setActiveFolderId(null);
+        setFolderPhotoIds([]);
+      }
+    }
+  }
+
+  async function openFolder(folderId: string) {
+    setActiveFolderId(folderId);
+    const { data, error } = await supabase
+      .from('folder_photos')
+      .select('photo_id')
+      .eq('folder_id', folderId);
+    if (error || !data) return;
+    setFolderPhotoIds((data as any[]).map((r) => r.photo_id));
+  }
+
+  async function addPhotoToFolder(photoId: string, folderId: string) {
+    const { error } = await supabase
+      .from('folder_photos')
+      .insert({ folder_id: folderId, photo_id: photoId });
+    if (!error && activeFolderId === folderId) {
+      setFolderPhotoIds((prev) => (prev.includes(photoId) ? prev : [...prev, photoId]));
+    }
+  }
+
+  async function removePhotoFromFolder(photoId: string, folderId: string) {
+    await supabase.from('folder_photos').delete().eq('folder_id', folderId).eq('photo_id', photoId);
+    setFolderPhotoIds((prev) => prev.filter((id) => id !== photoId));
+  }
+
+  function handlePhotoDragStart(e: React.DragEvent, photoId: string) {
+    e.dataTransfer.setData('text/plain', photoId);
+  }
+
+  function handleFolderDrop(e: React.DragEvent, folderId: string) {
+    e.preventDefault();
+    setDragOverFolderId(null);
+    const photoId = e.dataTransfer.getData('text/plain');
+    if (photoId) addPhotoToFolder(photoId, folderId);
+  }
+
   async function toggleGuestDisabled(email: string, current: boolean) {
     if (email === session.user.email) {
       setGuestError("You can't disable yourself.");
@@ -861,6 +964,10 @@ export default function App() {
           <button className="linklike" onClick={() => setShowMessagesPanel((v) => !v)}>
             {showMessagesPanel ? 'Hide messages' : 'Messages'}
           </button>
+          {' · '}
+          <button className="linklike" onClick={() => setShowMyPhotosPanel((v) => !v)}>
+            {showMyPhotosPanel ? 'Hide my photos' : 'My photos'}
+          </button>
           {isAdmin && (
             <>
               {' · '}
@@ -1019,6 +1126,103 @@ export default function App() {
                 </>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {showMyPhotosPanel && (
+        <div className="admin-panel myphotos-panel">
+          <h3>My Photos</h3>
+
+          <div className="myphotos-toolbar">
+            <button
+              className={'thread-item' + (myPhotosFilter === 'mine' ? ' active' : '')}
+              onClick={() => { setMyPhotosFilter('mine'); setActiveFolderId(null); }}
+            >
+              My uploads
+            </button>
+            <button
+              className={'thread-item' + (myPhotosFilter === 'all' && !activeFolderId ? ' active' : '')}
+              onClick={() => { setMyPhotosFilter('all'); setActiveFolderId(null); }}
+            >
+              Everything shared with me
+            </button>
+          </div>
+
+          <div className="thread-list-heading">Folders — drag any photo below onto one</div>
+          <div className="folder-row">
+            {folders.map((f) => (
+              <div
+                key={f.id}
+                className={
+                  'folder-chip' +
+                  (activeFolderId === f.id ? ' active' : '') +
+                  (dragOverFolderId === f.id ? ' drag-over' : '')
+                }
+                onDragOver={(e) => { e.preventDefault(); setDragOverFolderId(f.id); }}
+                onDragLeave={() => setDragOverFolderId(null)}
+                onDrop={(e) => handleFolderDrop(e, f.id)}
+              >
+                {renamingFolderId === f.id ? (
+                  <div className="msg-edit-row">
+                    <input value={renameFolderName} onChange={(e) => setRenameFolderName(e.target.value)} />
+                    <button className="linklike" onClick={saveRenameFolder}>Save</button>
+                    <button className="linklike" onClick={() => setRenamingFolderId(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <>
+                    <span onClick={() => openFolder(f.id)}>📁 {f.name}</span>
+                    <button className="linklike" onClick={() => startRenameFolder(f)}>Rename</button>
+                    <button className="linklike" onClick={() => deleteFolder(f.id)}>Delete</button>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+          <form className="new-folder-form" onSubmit={createFolder}>
+            <input
+              placeholder="New folder name (e.g. Reception Highlights)"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+            />
+            <button className="btn-upload" type="submit">Create folder</button>
+          </form>
+
+          <div className="thread-list-heading">
+            {activeFolderId
+              ? `In "${folders.find((f) => f.id === activeFolderId)?.name}"`
+              : myPhotosFilter === 'mine'
+              ? 'My uploads'
+              : 'Everything shared with me'}
+          </div>
+          <div className="myphotos-grid">
+            {(activeFolderId
+              ? photos.filter((p) => folderPhotoIds.includes(p.id))
+              : myPhotosFilter === 'mine'
+              ? photos.filter((p) => p.uploader_email === session.user.email)
+              : photos
+            ).map((p) => (
+              <div
+                key={p.id}
+                className="myphotos-thumb"
+                draggable={!activeFolderId}
+                onDragStart={(e) => handlePhotoDragStart(e, p.id)}
+              >
+                {previewUrls[p.id] ? (
+                  <img src={previewUrls[p.id]} alt={p.description || 'photo'} />
+                ) : (
+                  <div className="thumb-placeholder" />
+                )}
+                {activeFolderId && (
+                  <button className="linklike" onClick={() => removePhotoFromFolder(p.id, activeFolderId)}>
+                    Remove from folder
+                  </button>
+                )}
+              </div>
+            ))}
+            {activeFolderId && folderPhotoIds.length === 0 && (
+              <div className="photo-desc">Nothing in this folder yet — drag a photo onto it above.</div>
+            )}
           </div>
         </div>
       )}
@@ -1300,6 +1504,24 @@ export default function App() {
               {canEditOrDelete(lightbox) && <button className="delete-photo-btn" onClick={() => deletePhoto(lightbox)}>Delete</button>}
               <button className="close-btn" onClick={() => { setLightbox(null); setLightboxUrl(''); }}>Close</button>
             </div>
+
+            {folders.length > 0 && (
+              <div className="add-to-folder-row">
+                <select value={addToFolderChoice} onChange={(e) => setAddToFolderChoice(e.target.value)}>
+                  <option value="">Add to folder…</option>
+                  {folders.map((f) => (
+                    <option key={f.id} value={f.id}>{f.name}</option>
+                  ))}
+                </select>
+                <button
+                  className="btn-upload"
+                  disabled={!addToFolderChoice}
+                  onClick={() => { if (addToFolderChoice) addPhotoToFolder(lightbox.id, addToFolderChoice); }}
+                >
+                  Add
+                </button>
+              </div>
+            )}
 
             <div className="lightbox-comments">
               <h4>Comments</h4>
