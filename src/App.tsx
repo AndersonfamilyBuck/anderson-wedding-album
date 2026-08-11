@@ -39,7 +39,7 @@ interface MessageRecord {
 type ThreadRef = { type: 'dm' | 'group'; id: string; label: string };
 
 const CONFIG = {
-  HEADLINE: 'Share Your Photos & Videos From The Big Day',
+  HEADLINE: 'Share Your Photos and Videos From The Big Day',
   COUPLE: 'The Newlyweds',
   DATE: 'August 8, 2026',
   SITE_URL: 'https://anderson-wedding-album.vercel.app',
@@ -1079,6 +1079,15 @@ export default function App() {
     loadPhotoComments(p.id);
   }
 
+  function lightboxStep(direction: 1 | -1) {
+    if (!lightbox) return;
+    const list = filteredPhotos;
+    const currentIndex = list.findIndex((p) => p.id === lightbox.id);
+    if (currentIndex === -1) return;
+    const nextIndex = (currentIndex + direction + list.length) % list.length;
+    openLightbox(list[nextIndex]);
+  }
+
   // ---- Photo selection (for building a custom slideshow) ----
   function togglePhotoSelected(id: string) {
     setSelectedPhotoIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -1995,6 +2004,20 @@ export default function App() {
 
       {lightbox && (
         <div className="lightbox" onClick={() => { setLightbox(null); setLightboxUrl(''); }}>
+          <button
+            className="lightbox-arrow lightbox-arrow-left"
+            onClick={(e) => { e.stopPropagation(); lightboxStep(-1); }}
+            aria-label="Previous photo"
+          >
+            ◀
+          </button>
+          <button
+            className="lightbox-arrow lightbox-arrow-right"
+            onClick={(e) => { e.stopPropagation(); lightboxStep(1); }}
+            aria-label="Next photo"
+          >
+            ▶
+          </button>
           <div className="lightbox-inner" onClick={(e) => e.stopPropagation()}>
             {lightboxUrl ? (
               lightbox.media_type === 'video' ? (
@@ -2011,6 +2034,8 @@ export default function App() {
               {lightbox.description ? ` · ${lightbox.description}` : ''}
             </div>
             <div className="lightbox-actions">
+              <button onClick={() => lightboxStep(-1)}>◀ Back</button>
+              <button onClick={() => lightboxStep(1)}>Next ▶</button>
               <button onClick={() => downloadOriginal(lightbox)}>Download high-res</button>
               {lightbox.preview_path && <button onClick={() => downloadPreview(lightbox)}>Download web-size</button>}
               {canEditOrDelete(lightbox) && <button className="delete-photo-btn" onClick={() => deletePhoto(lightbox)}>Delete</button>}
