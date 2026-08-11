@@ -48,6 +48,56 @@ const CONFIG = {
   INVITE_WEBHOOK_URL: '', // paste your Zapier "Catch Hook" URL here once created
 };
 
+// Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
+// Guests see a "🆕 What's New" badge until they've opened the panel for that version.
+const CURRENT_VERSION = '1.6';
+const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '1.6',
+    notes: [
+      'Save a slideshow (photos, order, and music) to play again anytime',
+      'Share a saved slideshow with a person or group in Messages',
+      'Bigger, easier-to-tap buttons throughout',
+      'A "What\'s New" panel (you\'re looking at it!)',
+    ],
+  },
+  {
+    version: '1.5',
+    notes: [
+      'Add background music to a slideshow, with automatic timing to match the song',
+      'Choose whether videos use their own sound or keep the music playing',
+      'Request a photo be taken down (admins review and decide)',
+    ],
+  },
+  {
+    version: '1.4',
+    notes: [
+      'Play a slideshow of any selection of photos, a folder, or the whole gallery',
+      'Share a whole folder of photos with someone in Messages',
+      'Prev/Next arrows when viewing a photo full-size',
+    ],
+  },
+  {
+    version: '1.3',
+    notes: [
+      'Messages: direct messages, named groups, and comments on individual photos',
+      'My Photos: see your own uploads and organize them into folders',
+      'Admins can reorder the page layout and set the default photo sort',
+    ],
+  },
+  {
+    version: '1.2',
+    notes: [
+      'Sign in with a 6-digit code (more reliable than clicking email links)',
+      'Fixed photos from iPhones (HEIC) not showing a preview',
+    ],
+  },
+  {
+    version: '1.0',
+    notes: ['The album launches! Upload, browse, and download photos and videos from the wedding.'],
+  },
+];
+
 const MAX_PREVIEW_DIM = 1200;
 const PREVIEW_QUALITY = 0.75;
 
@@ -151,6 +201,19 @@ export default function App() {
   const [showLayoutPanel, setShowLayoutPanel] = useState(false);
   const [showAdminToolsRow, setShowAdminToolsRow] = useState(false);
   const [showHelpPanel, setShowHelpPanel] = useState(false);
+  const [showWhatsNewPanel, setShowWhatsNewPanel] = useState(false);
+  const [hasUnseenUpdate, setHasUnseenUpdate] = useState(false);
+
+  useEffect(() => {
+    const lastSeen = window.localStorage.getItem('lastSeenVersion');
+    setHasUnseenUpdate(lastSeen !== CURRENT_VERSION);
+  }, []);
+
+  function openWhatsNew() {
+    setShowWhatsNewPanel(true);
+    setHasUnseenUpdate(false);
+    window.localStorage.setItem('lastSeenVersion', CURRENT_VERSION);
+  }
 
   const [selectMode, setSelectMode] = useState(false);
   const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
@@ -1576,6 +1639,10 @@ export default function App() {
           Signed in as {session.user.user_metadata?.display_name || session.user.email}
         </div>
 
+        <button className="whats-new-link" onClick={openWhatsNew}>
+          🆕 What's new{hasUnseenUpdate && <span className="unseen-dot" />}
+        </button>
+
         <div className="nav-pills">
           <button className="nav-pill" onClick={() => setShowHelpPanel((v) => !v)}>
             {showHelpPanel ? '✕ Close help' : '❓ How this works'}
@@ -1622,11 +1689,13 @@ export default function App() {
       {showHelpPanel && (
         <div className="admin-panel help-panel" style={{ order: -20 }}>
           <h3>How this site works</h3>
+
+          <div className="help-section-title">Sharing photos & videos</div>
           <div className="help-grid">
             <div className="help-item">
               <div className="help-emoji">📤</div>
               <div>
-                <strong>Upload photos & videos</strong>
+                <strong>Upload</strong>
                 <p>Drag files into the box, or tap "Choose photos or videos." Add a short description and a category if you'd like.</p>
               </div>
             </div>
@@ -1638,35 +1707,91 @@ export default function App() {
               </div>
             </div>
             <div className="help-item">
-              <div className="help-emoji">💬</div>
-              <div>
-                <strong>Messages</strong>
-                <p>Send direct messages to any guest, start a named group chat, or comment on individual photos.</p>
-              </div>
-            </div>
-            <div className="help-item">
-              <div className="help-emoji">🖼️</div>
-              <div>
-                <strong>My Photos & folders</strong>
-                <p>See what you've uploaded, then organize favorites into folders. Folders don't delete or move the original photos — they're just for organizing.</p>
-              </div>
-            </div>
-            <div className="help-item">
               <div className="help-emoji">⬇️</div>
               <div>
                 <strong>Downloading</strong>
-                <p>Every photo has "High-res" (full quality) and "Web-size" (smaller, quick to share) download buttons.</p>
+                <p>Every photo has "Download high-res" (full quality) and "Download web-size" (smaller, quick to share) buttons.</p>
               </div>
             </div>
             <div className="help-item">
               <div className="help-emoji">✏️</div>
               <div>
                 <strong>Editing your own uploads</strong>
-                <p>Click "Edit" on anything you uploaded to change its name, description, or category — or "Delete" to remove it.</p>
+                <p>Click a photo, then "Edit" to change its description or category, or "Delete" to remove it. Admins can edit or delete anyone's upload.</p>
+              </div>
+            </div>
+            <div className="help-item">
+              <div className="help-emoji">🚩</div>
+              <div>
+                <strong>Request a takedown</strong>
+                <p>See a photo you'd rather wasn't up? Open it and click "Request this be taken down." An admin will review it — nothing is deleted automatically.</p>
               </div>
             </div>
           </div>
+
+          <div className="help-section-title">Messages</div>
+          <div className="help-grid">
+            <div className="help-item">
+              <div className="help-emoji">💬</div>
+              <div>
+                <strong>Direct messages & groups</strong>
+                <p>Click any guest's name for a private chat, or "+ New group" to start a named group conversation.</p>
+              </div>
+            </div>
+            <div className="help-item">
+              <div className="help-emoji">📷</div>
+              <div>
+                <strong>Photo comments</strong>
+                <p>Open any photo — there's a comment box right below it for that specific photo.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="help-section-title">My Photos, folders & slideshows</div>
+          <div className="help-grid">
+            <div className="help-item">
+              <div className="help-emoji">🖼️</div>
+              <div>
+                <strong>My Photos</strong>
+                <p>Shows only what you've uploaded. Organize favorites into folders — this never deletes or moves the originals, it's just for organizing.</p>
+              </div>
+            </div>
+            <div className="help-item">
+              <div className="help-emoji">▶️</div>
+              <div>
+                <strong>Slideshows</strong>
+                <p>Play a slideshow of the whole gallery, a folder, or hand-pick photos with "Pick photos for a slideshow." Add background music, and choose whether videos keep their own sound or your music plays through.</p>
+              </div>
+            </div>
+            <div className="help-item">
+              <div className="help-emoji">💾</div>
+              <div>
+                <strong>Save & share a slideshow</strong>
+                <p>Save one to replay later exactly as set up, music included — or share it with someone in Messages so they can watch it too.</p>
+              </div>
+            </div>
+          </div>
+
           <button className="linklike" onClick={() => setShowHelpPanel(false)}>Got it, close this</button>
+        </div>
+      )}
+
+      {showWhatsNewPanel && (
+        <div className="admin-panel whats-new-panel" style={{ order: -20 }}>
+          <h3>What's new</h3>
+          <div className="changelog-list">
+            {CHANGELOG.map((entry) => (
+              <div key={entry.version} className="changelog-entry">
+                <div className="changelog-version">Version {entry.version}</div>
+                <ul>
+                  {entry.notes.map((note, i) => (
+                    <li key={i}>{note}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+          <button className="linklike" onClick={() => setShowWhatsNewPanel(false)}>Close</button>
         </div>
       )}
 
