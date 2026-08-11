@@ -55,6 +55,12 @@ export default function App() {
   const [emailInput, setEmailInput] = useState('');
   const [nameInput, setNameInput] = useState('');
   const [magicLinkSent, setMagicLinkSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpVerifying, setOtpVerifying] = useState(false);
+  const [otpError, setOtpError] = useState('');
+  const [pendingConfirm, setPendingConfirm] = useState<{ email: string; token: string } | null>(null);
+  const [confirmError, setConfirmError] = useState('');
+  const [confirmBusy, setConfirmBusy] = useState(false);
   const [authError, setAuthError] = useState('');
   const [notAllowed, setNotAllowed] = useState<'missing' | 'disabled' | null>(null);
 
@@ -151,6 +157,35 @@ export default function App() {
     });
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  // ---- Detect a "click to finish signing in" link (safe against email link-scanners) ----
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ce = params.get('confirm_email');
+    const ct = params.get('confirm_token');
+    if (ce && ct) {
+      setPendingConfirm({ email: ce, token: ct });
+    }
+  }, []);
+
+  async function confirmFromLink() {
+    if (!pendingConfirm) return;
+    setConfirmBusy(true);
+    setConfirmError('');
+    const { error } = await supabase.auth.verifyOtp({
+      email: pendingConfirm.email,
+      token: pendingConfirm.token,
+      type: 'email',
+    });
+    setConfirmBusy(false);
+    if (error) {
+      setConfirmError(error.message);
+      return;
+    }
+    // Clean the token out of the URL so refreshing doesn't retry a used-up code.
+    window.history.replaceState({}, '', window.location.pathname);
+    setPendingConfirm(null);
+  }
 
   // ---- Load photos once signed in ----
   useEffect(() => {
@@ -250,6 +285,28 @@ export default function App() {
       return;
     }
     setMagicLinkSent(true);
+  }
+
+  async function verifyOtpCode(e: React.FormEvent) {
+    e.preventDefault();
+    setOtpError('');
+    const code = otpCode.trim();
+    if (!code) {
+      setOtpError('Enter the 6-digit code from your email.');
+      return;
+    }
+    setOtpVerifying(true);
+    const { error } = await supabase.auth.verifyOtp({
+      email: emailInput.trim(),
+      token: code,
+      type: 'email',
+    });
+    setOtpVerifying(false);
+    if (error) {
+      setOtpError(error.message);
+      return;
+    }
+    // On success, Supabase's onAuthStateChange listener picks up the new session automatically.
   }
 
   async function loadPhotos() {
@@ -1063,36 +1120,86 @@ export default function App() {
   }
 
   if (!session) {
+    if (pendingConfirm) {
+      return (
+        <div className="gate-wrap">
+          <div className="gate-card">
+            <div className="eyebrow">You're invited</div>
+            <h1>The Album</h1>
+            <div className="gate-sub">
+              Signing in as <strong>{pendingConfirm.email}</strong>. Click below to finish.
+            </div>
+            <div className="gate-error">{confirmError}</div>
+            <button className="btn-primary" onClick={confirmFromLink} disabled={confirmBusy}>
+              {confirmBusy ? 'Signing you in…' : 'Click to sign in'}
+            </button>
+            <button
+              className="linklike"
+              type="button"
+              onClick={() => { setPendingConfirm(null); window.history.replaceState({}, '', window.location.pathname); }}
+            >
+              Use a different email instead
+            </button>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="gate-wrap">
-        <form className="gate-card" onSubmit={sendMagicLink}>
-          <div className="eyebrow">You're invited</div>
-          <h1>The Album</h1>
-          <div className="gate-sub">
-            {magicLinkSent
-              ? 'Check your email for a sign-in link.'
-              : 'Enter your email — we\'ll send you a link to sign in, no password needed.'}
-          </div>
-          {!magicLinkSent && (
-            <>
-              <div className="field">
-                <label>Your name</label>
-                <input value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="e.g. Aunt Carol" />
-              </div>
-              <div className="field">
-                <label>Email</label>
-                <input
-                  type="email"
-                  value={emailInput}
-                  onChange={(e) => setEmailInput(e.target.value)}
-                  placeholder="you@example.com"
-                />
-              </div>
-              <div className="gate-error">{authError}</div>
-              <button className="btn-primary" type="submit">Send me a sign-in link</button>
-            </>
-          )}
-        </form>
+        {!magicLinkSent ? (
+          <form className="gate-card" onSubmit={sendMagicLink}>
+            <div className="eyebrow">You're invited</div>
+            <h1>The Album</h1>
+            <div className="gate-sub">
+              Enter your email — we'll send you a code to sign in, no password needed.
+            </div>
+            <div className="field">
+              <label>Your name</label>
+              <input value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder="e.g. Aunt Carol" />
+            </div>
+            <div className="field">
+              <label>Email</label>
+              <input
+                type="email"
+                value={emailInput}
+                onChange={(e) => setEmailInput(e.target.value)}
+                placeholder="you@example.com"
+              />
+            </div>
+            <div className="gate-error">{authError}</div>
+            <button className="btn-primary" type="submit">Send me a sign-in code</button>
+          </form>
+        ) : (
+          <form className="gate-card" onSubmit={verifyOtpCode}>
+            <div className="eyebrow">You're invited</div>
+            <h1>The Album</h1>
+            <div className="gate-sub">
+              Check your email — enter the 6-digit code below (this works better than tapping the link,
+              especially in the Gmail app).
+            </div>
+            <div className="field">
+              <label>6-digit code</label>
+              <input
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value)}
+                placeholder="123456"
+                inputMode="numeric"
+                autoFocus
+              />
+            </div>
+            <div className="gate-error">{otpError}</div>
+            <button className="btn-primary" type="submit" disabled={otpVerifying}>
+              {otpVerifying ? 'Checking…' : 'Sign in'}
+            </button>
+            <button
+              className="linklike"
+              type="button"
+              onClick={() => { setMagicLinkSent(false); setOtpCode(''); setOtpError(''); }}
+            >
+              Use a different email
+            </button>
+          </form>
+        )}
       </div>
     );
   }
