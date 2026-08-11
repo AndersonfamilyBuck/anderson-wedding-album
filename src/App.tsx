@@ -138,6 +138,8 @@ export default function App() {
 
   const [sectionOrder, setSectionOrder] = useState<string[]>(['upload', 'gallery', 'messages', 'myphotos']);
   const [showLayoutPanel, setShowLayoutPanel] = useState(false);
+  const [showAdminToolsRow, setShowAdminToolsRow] = useState(false);
+  const [showHelpPanel, setShowHelpPanel] = useState(false);
   const [layoutSort, setLayoutSort] = useState<'newest' | 'oldest' | 'uploader'>('newest');
   const [layoutSaved, setLayoutSaved] = useState(false);
 
@@ -1212,38 +1214,98 @@ export default function App() {
         <div className="date">{CONFIG.COUPLE} · {CONFIG.DATE}</div>
         <div className="signed-in-as">
           Signed in as {session.user.user_metadata?.display_name || session.user.email}
-          {' · '}
-          <button className="linklike" onClick={() => supabase.auth.signOut()}>Sign out</button>
-          {' · '}
-          <button className="linklike" onClick={() => setShowMessagesPanel((v) => !v)}>
-            {showMessagesPanel ? 'Hide messages' : 'Messages'}
-          </button>
-          {' · '}
-          <button className="linklike" onClick={() => setShowMyPhotosPanel((v) => !v)}>
-            {showMyPhotosPanel ? 'Hide my photos' : 'My photos'}
-          </button>
-          {isAdmin && (
-            <>
-              {' · '}
-              <button className="linklike" onClick={() => setShowAdminPanel((v) => !v)}>
-                {showAdminPanel ? 'Hide guest list' : 'Manage guest list'}
-              </button>
-              {' · '}
-              <button className="linklike" onClick={() => setShowCategoryPanel((v) => !v)}>
-                {showCategoryPanel ? 'Hide categories' : 'Manage categories'}
-              </button>
-              {' · '}
-              <button className="linklike" onClick={() => setShowRequestsPanel((v) => !v)}>
-                {showRequestsPanel ? 'Hide requests' : `Access requests${pendingRequests.length ? ` (${pendingRequests.length})` : ''}`}
-              </button>
-              {' · '}
-              <button className="linklike" onClick={() => setShowLayoutPanel((v) => !v)}>
-                {showLayoutPanel ? 'Hide layout settings' : 'Manage layout'}
-              </button>
-            </>
-          )}
         </div>
+
+        <div className="nav-pills">
+          <button className="nav-pill" onClick={() => setShowHelpPanel((v) => !v)}>
+            {showHelpPanel ? '✕ Close help' : '❓ How this works'}
+          </button>
+          <button className={'nav-pill' + (showMessagesPanel ? ' active' : '')} onClick={() => setShowMessagesPanel((v) => !v)}>
+            💬 {showMessagesPanel ? 'Hide messages' : 'Messages'}
+          </button>
+          <button className={'nav-pill' + (showMyPhotosPanel ? ' active' : '')} onClick={() => setShowMyPhotosPanel((v) => !v)}>
+            🖼️ {showMyPhotosPanel ? 'Hide my photos' : 'My photos'}
+          </button>
+          <button className="nav-pill subtle" onClick={() => supabase.auth.signOut()}>
+            Sign out
+          </button>
+        </div>
+
+        {isAdmin && (
+          <div className="admin-tools-row">
+            <button className="linklike" onClick={() => setShowAdminToolsRow((v) => !v)}>
+              {showAdminToolsRow ? '▴ Hide admin tools' : '▾ Admin tools'}
+            </button>
+            {showAdminToolsRow && (
+              <div className="nav-pills admin-pills">
+                <button className={'nav-pill' + (showAdminPanel ? ' active' : '')} onClick={() => setShowAdminPanel((v) => !v)}>
+                  👥 {showAdminPanel ? 'Hide guest list' : 'Guest list'}
+                </button>
+                <button className={'nav-pill' + (showCategoryPanel ? ' active' : '')} onClick={() => setShowCategoryPanel((v) => !v)}>
+                  📁 {showCategoryPanel ? 'Hide categories' : 'Categories'}
+                </button>
+                <button className={'nav-pill' + (showRequestsPanel ? ' active' : '')} onClick={() => setShowRequestsPanel((v) => !v)}>
+                  📨 {showRequestsPanel ? 'Hide requests' : `Access requests${pendingRequests.length ? ` (${pendingRequests.length})` : ''}`}
+                </button>
+                <button className={'nav-pill' + (showLayoutPanel ? ' active' : '')} onClick={() => setShowLayoutPanel((v) => !v)}>
+                  ⚙️ {showLayoutPanel ? 'Hide layout settings' : 'Layout settings'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {showHelpPanel && (
+        <div className="admin-panel help-panel" style={{ order: -20 }}>
+          <h3>How this site works</h3>
+          <div className="help-grid">
+            <div className="help-item">
+              <div className="help-emoji">📤</div>
+              <div>
+                <strong>Upload photos & videos</strong>
+                <p>Drag files into the box, or tap "Choose photos or videos." Add a short description and a category if you'd like.</p>
+              </div>
+            </div>
+            <div className="help-item">
+              <div className="help-emoji">🔍</div>
+              <div>
+                <strong>Browse & search</strong>
+                <p>Use the dropdowns above the gallery to filter by person or category, search descriptions, or change the sort order.</p>
+              </div>
+            </div>
+            <div className="help-item">
+              <div className="help-emoji">💬</div>
+              <div>
+                <strong>Messages</strong>
+                <p>Send direct messages to any guest, start a named group chat, or comment on individual photos.</p>
+              </div>
+            </div>
+            <div className="help-item">
+              <div className="help-emoji">🖼️</div>
+              <div>
+                <strong>My Photos & folders</strong>
+                <p>See what you've uploaded, then organize favorites into folders. Folders don't delete or move the original photos — they're just for organizing.</p>
+              </div>
+            </div>
+            <div className="help-item">
+              <div className="help-emoji">⬇️</div>
+              <div>
+                <strong>Downloading</strong>
+                <p>Every photo has "High-res" (full quality) and "Web-size" (smaller, quick to share) download buttons.</p>
+              </div>
+            </div>
+            <div className="help-item">
+              <div className="help-emoji">✏️</div>
+              <div>
+                <strong>Editing your own uploads</strong>
+                <p>Click "Edit" on anything you uploaded to change its name, description, or category — or "Delete" to remove it.</p>
+              </div>
+            </div>
+          </div>
+          <button className="linklike" onClick={() => setShowHelpPanel(false)}>Got it, close this</button>
+        </div>
+      )}
 
       {showMessagesPanel && (
         <div className="admin-panel messages-panel" style={{ order: sectionOrder.indexOf('messages') }}>
