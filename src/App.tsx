@@ -210,6 +210,68 @@ export default function App() {
     { key: 'myphotos', label: 'My Photos & folders' },
     { key: 'slideshows', label: 'Slideshows & music' },
   ];
+
+  const TUTORIAL_SCRIPTS: Record<string, { instruction: string; caption: string }[]> = {
+    onboarding: [
+      { instruction: 'Sign out, then screenshot the sign-in page with the email box empty.', caption: 'Enter your name and email to get started.' },
+      { instruction: "Enter an email and screenshot the page right after tapping \"Send me a sign-in code.\"", caption: 'Check your email for a 6-digit code.' },
+      { instruction: 'Screenshot the code-entry box on the sign-in page.', caption: 'Type the 6-digit code here to sign in.' },
+      { instruction: 'Once signed in, screenshot the main gallery page.', caption: "You're in! This is the gallery — everyone's photos and videos live here." },
+    ],
+    uploading: [
+      { instruction: 'Screenshot the page with the round gold upload button visible in the bottom-right corner.', caption: 'Tap this button any time to add photos or videos.' },
+      { instruction: 'Click the upload button, then screenshot the panel that opens.', caption: 'Add a short description and pick a category if you want.' },
+      { instruction: 'Screenshot after clicking "Choose photos or videos" — the file picker open.', caption: 'Pick one or more photos or videos from your device.' },
+      { instruction: 'Screenshot the gallery right after a new upload appears.', caption: "That's it — your photo now shows up for everyone to see." },
+    ],
+    messages: [
+      { instruction: 'Screenshot the header with the big "Messages" button visible.', caption: 'Tap "Messages" to open your inbox.' },
+      { instruction: 'Open Messages and screenshot the list of names under "Direct messages."', caption: 'Tap anyone\'s name to start a private conversation.' },
+      { instruction: 'Screenshot the "+ New group" button and the name/member-picker after clicking it.', caption: 'Start a named group chat with anyone you choose.' },
+      { instruction: 'Open any photo and screenshot the comment box underneath it.', caption: 'You can also comment right on a specific photo.' },
+    ],
+    myphotos: [
+      { instruction: 'Screenshot the header with the big "My photos" button visible.', caption: 'Tap "My photos" to see only what you\'ve uploaded.' },
+      { instruction: 'Open My Photos and screenshot the "Folders" section with the "+ New folder" box.', caption: 'Create folders to organize your favorites.' },
+      { instruction: 'Screenshot a photo being dragged onto a folder (or the "Add to folder" dropdown in the photo view on mobile).', caption: 'Drag a photo onto a folder — this only organizes it, nothing gets deleted or moved.' },
+    ],
+    slideshows: [
+      { instruction: 'Screenshot the "▶️ Play slideshow" button in the gallery filters bar.', caption: 'Tap "Play slideshow" to watch photos one after another.' },
+      { instruction: 'While a slideshow is playing, screenshot the "🎵 Add background music" button at the bottom.', caption: 'Add a song from your device — the timing adjusts to match it.' },
+      { instruction: 'Screenshot the "💾 Save this slideshow" button and the name box.', caption: 'Save it to play again later, music included.' },
+    ],
+  };
+
+  const [guidedKey, setGuidedKey] = useState<string | null>(null);
+  const [guidedStepIndex, setGuidedStepIndex] = useState(0);
+  const [guidedCaption, setGuidedCaption] = useState('');
+
+  function startGuidedSetup(key: string) {
+    const script = TUTORIAL_SCRIPTS[key];
+    if (!script || script.length === 0) return;
+    setGuidedKey(key);
+    setGuidedStepIndex(0);
+    setGuidedCaption(script[0].caption);
+  }
+
+  function cancelGuidedSetup() {
+    setGuidedKey(null);
+    setGuidedStepIndex(0);
+    setGuidedCaption('');
+  }
+
+  function advanceGuidedSetup() {
+    if (!guidedKey) return;
+    const script = TUTORIAL_SCRIPTS[guidedKey];
+    const nextIndex = guidedStepIndex + 1;
+    if (nextIndex < script.length) {
+      setGuidedStepIndex(nextIndex);
+      setGuidedCaption(script[nextIndex].caption);
+    } else {
+      cancelGuidedSetup();
+    }
+  }
+
   const [tutorialVideos, setTutorialVideos] = useState<Record<string, { id: string; title: string; video_path: string }>>({});
   const [activeTutorialKey, setActiveTutorialKey] = useState<string | null>(null);
   const [activeTutorialUrl, setActiveTutorialUrl] = useState('');
@@ -2431,7 +2493,10 @@ export default function App() {
             style={{ display: 'none' }}
             onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file && addingSlideForKey) {
+              if (file && guidedKey) {
+                addTutorialSlide(guidedKey, file, guidedCaption.trim() || 'Step');
+                advanceGuidedSetup();
+              } else if (file && addingSlideForKey) {
                 addTutorialSlide(addingSlideForKey, file, newSlideCaption.trim() || 'Step');
                 setNewSlideCaption('');
                 setAddingSlideForKey(null);
@@ -2485,10 +2550,35 @@ export default function App() {
                     <button className="linklike" onClick={() => tutorialSlideFileInputRef.current?.click()}>Choose image</button>
                     <button className="linklike" onClick={() => setAddingSlideForKey(null)}>Cancel</button>
                   </div>
+                ) : guidedKey === t.key ? (
+                  <div className="guided-setup-card">
+                    <div className="guided-setup-step-label">
+                      Step {guidedStepIndex + 1} of {TUTORIAL_SCRIPTS[t.key].length}
+                    </div>
+                    <p>{TUTORIAL_SCRIPTS[t.key][guidedStepIndex].instruction}</p>
+                    <div className="field">
+                      <label>Caption for this step</label>
+                      <input value={guidedCaption} onChange={(e) => setGuidedCaption(e.target.value)} />
+                    </div>
+                    <div className="guided-setup-actions">
+                      <button className="btn-upload" onClick={() => tutorialSlideFileInputRef.current?.click()}>
+                        📷 Upload this screenshot
+                      </button>
+                      <button className="linklike" onClick={advanceGuidedSetup}>Skip this step</button>
+                      <button className="linklike" onClick={cancelGuidedSetup}>Stop guided setup</button>
+                    </div>
+                  </div>
                 ) : (
-                  <button className="linklike" onClick={() => setAddingSlideForKey(t.key)}>
-                    + Add a step-by-step screenshot
-                  </button>
+                  <div className="tutorial-add-row">
+                    {TUTORIAL_SCRIPTS[t.key] && (
+                      <button className="btn-upload" onClick={() => startGuidedSetup(t.key)}>
+                        🧭 Start guided setup
+                      </button>
+                    )}
+                    <button className="linklike" onClick={() => setAddingSlideForKey(t.key)}>
+                      + Add a screenshot manually
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
