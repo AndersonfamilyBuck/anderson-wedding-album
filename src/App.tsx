@@ -140,6 +140,14 @@ export default function App() {
   const [showLayoutPanel, setShowLayoutPanel] = useState(false);
   const [showAdminToolsRow, setShowAdminToolsRow] = useState(false);
   const [showHelpPanel, setShowHelpPanel] = useState(false);
+
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedPhotoIds, setSelectedPhotoIds] = useState<string[]>([]);
+  const [slideshowPhotos, setSlideshowPhotos] = useState<PhotoRecord[] | null>(null);
+  const [slideshowIndex, setSlideshowIndex] = useState(0);
+  const [slideshowUrl, setSlideshowUrl] = useState('');
+  const [slideshowPlaying, setSlideshowPlaying] = useState(true);
+  const slideshowVideoRef = useRef<HTMLVideoElement>(null);
   const [layoutSort, setLayoutSort] = useState<'newest' | 'oldest' | 'uploader'>('newest');
   const [layoutSaved, setLayoutSaved] = useState(false);
 
@@ -147,6 +155,12 @@ export default function App() {
   const [newCommentBody, setNewCommentBody] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const myPhotosPanelRef = useRef<HTMLDivElement>(null);
+  const messagesPanelRef = useRef<HTMLDivElement>(null);
+
+  function scrollToPanel(ref: React.RefObject<HTMLDivElement>) {
+    setTimeout(() => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+  }
 
   // ---- Auth bootstrap ----
   useEffect(() => {
@@ -1065,6 +1079,84 @@ export default function App() {
     loadPhotoComments(p.id);
   }
 
+  // ---- Photo selection (for building a custom slideshow) ----
+  function togglePhotoSelected(id: string) {
+    setSelectedPhotoIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }
+
+  function selectAllVisible(list: PhotoRecord[]) {
+    setSelectedPhotoIds(list.map((p) => p.id));
+  }
+
+  function clearSelection() {
+    setSelectedPhotoIds([]);
+  }
+
+  function exitSelectMode() {
+    setSelectMode(false);
+    setSelectedPhotoIds([]);
+  }
+
+  // ---- Slideshow ----
+  async function startSlideshow(photos: PhotoRecord[]) {
+    if (photos.length === 0) return;
+    setSlideshowPhotos(photos);
+    setSlideshowIndex(0);
+    setSlideshowPlaying(true);
+  }
+
+  function closeSlideshow() {
+    setSlideshowPhotos(null);
+    setSlideshowUrl('');
+  }
+
+  function slideshowNext() {
+    setSlideshowIndex((i) => {
+      if (!slideshowPhotos) return i;
+      return (i + 1) % slideshowPhotos.length;
+    });
+  }
+
+  function slideshowPrev() {
+    setSlideshowIndex((i) => {
+      if (!slideshowPhotos) return i;
+      return (i - 1 + slideshowPhotos.length) % slideshowPhotos.length;
+    });
+  }
+
+  useEffect(() => {
+    if (!slideshowPhotos) return;
+    const current = slideshowPhotos[slideshowIndex];
+    if (!current) return;
+    (async () => {
+      const isHeic = /\.(heic|heif)$/i.test(current.original_path);
+      const url =
+        isHeic && current.preview_path
+          ? await getSignedUrl('previews', current.preview_path)
+          : await getSignedUrl('originals', current.original_path);
+      setSlideshowUrl(url);
+    })();
+  }, [slideshowPhotos, slideshowIndex]);
+
+  // Auto-advance timer — only for photos. Videos advance on their own "ended" event instead.
+  useEffect(() => {
+    if (!slideshowPhotos || !slideshowPlaying) return;
+    const current = slideshowPhotos[slideshowIndex];
+    if (!current || current.media_type === 'video') return;
+    const timer = setTimeout(() => slideshowNext(), 4000);
+    return () => clearTimeout(timer);
+  }, [slideshowPhotos, slideshowIndex, slideshowPlaying]);
+
+  // Keep the video itself in sync with the Play/Pause button.
+  useEffect(() => {
+    if (!slideshowVideoRef.current) return;
+    if (slideshowPlaying) {
+      slideshowVideoRef.current.play().catch(() => {});
+    } else {
+      slideshowVideoRef.current.pause();
+    }
+  }, [slideshowPlaying, slideshowUrl]);
+
   async function downloadOriginal(p: PhotoRecord) {
     const url = await getSignedUrl('originals', p.original_path);
     triggerDownload(url, `anderson-wedding-${p.id}-original.${p.original_path.split('.').pop()}`);
@@ -1220,10 +1312,10 @@ export default function App() {
           <button className="nav-pill" onClick={() => setShowHelpPanel((v) => !v)}>
             {showHelpPanel ? '✕ Close help' : '❓ How this works'}
           </button>
-          <button className={'nav-pill' + (showMessagesPanel ? ' active' : '')} onClick={() => setShowMessagesPanel((v) => !v)}>
+          <button className={'nav-pill' + (showMessagesPanel ? ' active' : '')} onClick={() => { setShowMessagesPanel((v) => { if (!v) scrollToPanel(messagesPanelRef); return !v; }); }}>
             💬 {showMessagesPanel ? 'Hide messages' : 'Messages'}
           </button>
-          <button className={'nav-pill' + (showMyPhotosPanel ? ' active' : '')} onClick={() => setShowMyPhotosPanel((v) => !v)}>
+          <button className={'nav-pill' + (showMyPhotosPanel ? ' active' : '')} onClick={() => { setShowMyPhotosPanel((v) => { if (!v) scrollToPanel(myPhotosPanelRef); return !v; }); }}>
             🖼️ {showMyPhotosPanel ? 'Hide my photos' : 'My photos'}
           </button>
           <button className="nav-pill subtle" onClick={() => supabase.auth.signOut()}>
@@ -1308,7 +1400,7 @@ export default function App() {
       )}
 
       {showMessagesPanel && (
-        <div className="admin-panel messages-panel" style={{ order: sectionOrder.indexOf('messages') }}>
+        <div ref={messagesPanelRef} className="admin-panel messages-panel" style={{ order: sectionOrder.indexOf('messages') }}>
           <h3>Messages</h3>
           <div className="messages-layout">
             <div className="thread-list">
@@ -1451,7 +1543,7 @@ export default function App() {
       )}
 
       {showMyPhotosPanel && (
-        <div className="admin-panel myphotos-panel" style={{ order: sectionOrder.indexOf('myphotos') }}>
+        <div ref={myPhotosPanelRef} className="admin-panel myphotos-panel" style={{ order: sectionOrder.indexOf('myphotos') }}>
           <h3>My Photos</h3>
 
           <div className="myphotos-toolbar">
@@ -1508,12 +1600,24 @@ export default function App() {
             <button className="btn-upload" type="submit">Create folder</button>
           </form>
 
-          <div className="thread-list-heading">
-            {activeFolderId
-              ? `In "${folders.find((f) => f.id === activeFolderId)?.name}"`
-              : myPhotosFilter === 'mine'
-              ? 'My uploads'
-              : 'Everything shared with me'}
+          <div className="thread-list-heading myphotos-heading-row">
+            <span>
+              {activeFolderId
+                ? `In "${folders.find((f) => f.id === activeFolderId)?.name}"`
+                : myPhotosFilter === 'mine'
+                ? 'My uploads'
+                : 'Everything shared with me'}
+            </span>
+            {(() => {
+              const currentList = activeFolderId
+                ? photos.filter((p) => folderPhotoIds.includes(p.id))
+                : myPhotosFilter === 'mine'
+                ? photos.filter((p) => p.uploader_email === session.user.email)
+                : photos;
+              return currentList.length > 0 ? (
+                <button className="linklike" onClick={() => startSlideshow(currentList)}>▶️ Play slideshow</button>
+              ) : null;
+            })()}
           </div>
           <div className="myphotos-grid">
             {(activeFolderId
@@ -1768,7 +1872,31 @@ export default function App() {
               <option value="oldest">Oldest first</option>
               <option value="uploader">By submitter name</option>
             </select>
+            <button className="btn-upload" onClick={() => startSlideshow(filteredPhotos)}>
+              ▶️ Play slideshow
+            </button>
+            <button
+              className={'nav-pill' + (selectMode ? ' active' : '')}
+              onClick={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+            >
+              {selectMode ? '✕ Cancel selecting' : '☑️ Pick photos for a slideshow'}
+            </button>
           </div>
+
+          {selectMode && (
+            <div className="select-bar">
+              <span>{selectedPhotoIds.length} selected</span>
+              <button className="linklike" onClick={() => selectAllVisible(filteredPhotos)}>Select All</button>
+              <button className="linklike" onClick={clearSelection}>Unselect All</button>
+              <button
+                className="btn-upload"
+                disabled={selectedPhotoIds.length === 0}
+                onClick={() => startSlideshow(filteredPhotos.filter((p) => selectedPhotoIds.includes(p.id)))}
+              >
+                ▶️ Play selected ({selectedPhotoIds.length})
+              </button>
+            </div>
+          )}
 
           <div className="gallery-wrap" style={{ order: sectionOrder.indexOf('gallery') }}>
             {loadingGallery ? (
@@ -1781,8 +1909,23 @@ export default function App() {
             ) : (
               <div className="grid">
                 {filteredPhotos.map((p) => (
-                  <div className="photo-card" key={p.id}>
-                    <div className="photo-frame" onClick={() => editingPhotoId !== p.id && openLightbox(p)}>
+                  <div className={'photo-card' + (selectMode && selectedPhotoIds.includes(p.id) ? ' selected' : '')} key={p.id}>
+                    <div
+                      className="photo-frame"
+                      onClick={() => {
+                        if (selectMode) { togglePhotoSelected(p.id); return; }
+                        if (editingPhotoId !== p.id) openLightbox(p);
+                      }}
+                    >
+                      {selectMode && (
+                        <input
+                          type="checkbox"
+                          className="select-checkbox"
+                          checked={selectedPhotoIds.includes(p.id)}
+                          onChange={() => togglePhotoSelected(p.id)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      )}
                       {previewUrls[p.id] ? (
                         <img src={previewUrls[p.id]} alt={p.description || 'wedding photo'} />
                       ) : (
@@ -1932,6 +2075,43 @@ export default function App() {
                 <button className="btn-upload" type="submit">Post</button>
               </form>
             </div>
+          </div>
+        </div>
+      )}
+
+      {slideshowPhotos && (
+        <div className="slideshow-overlay">
+          <button className="slideshow-close" onClick={closeSlideshow}>✕ Close</button>
+          <div className="slideshow-stage">
+            {slideshowUrl ? (
+              slideshowPhotos[slideshowIndex].media_type === 'video' ? (
+                <video
+                  key={slideshowUrl}
+                  ref={slideshowVideoRef}
+                  src={slideshowUrl}
+                  controls
+                  autoPlay={slideshowPlaying}
+                  onEnded={() => { if (slideshowPlaying) slideshowNext(); }}
+                  style={{ maxWidth: '100%', maxHeight: '78vh' }}
+                />
+              ) : (
+                <img src={slideshowUrl} alt={slideshowPhotos[slideshowIndex].description || ''} />
+              )
+            ) : (
+              <div className="empty-state">Loading…</div>
+            )}
+          </div>
+          <div className="slideshow-caption">
+            {slideshowPhotos[slideshowIndex].uploader_name}
+            {slideshowPhotos[slideshowIndex].description ? ` · ${slideshowPhotos[slideshowIndex].description}` : ''}
+          </div>
+          <div className="slideshow-controls">
+            <button onClick={slideshowPrev}>⏮ Prev</button>
+            <button onClick={() => setSlideshowPlaying((v) => !v)}>
+              {slideshowPlaying ? '⏸ Pause' : '▶️ Play'}
+            </button>
+            <button onClick={slideshowNext}>⏭ Next</button>
+            <span className="slideshow-counter">{slideshowIndex + 1} / {slideshowPhotos.length}</span>
           </div>
         </div>
       )}
