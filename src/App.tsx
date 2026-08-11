@@ -202,6 +202,29 @@ export default function App() {
 
   const [sectionOrder, setSectionOrder] = useState<string[]>(['showcase', 'gallery', 'messages', 'myphotos']);
   const [showUploadPanel, setShowUploadPanel] = useState(false);
+
+  const TUTORIAL_KEYS: { key: string; label: string }[] = [
+    { key: 'onboarding', label: 'Getting started (shown to brand-new sign-ups)' },
+    { key: 'uploading', label: 'Uploading photos & videos' },
+    { key: 'messages', label: 'Messages' },
+    { key: 'myphotos', label: 'My Photos & folders' },
+    { key: 'slideshows', label: 'Slideshows & music' },
+  ];
+  const [tutorialVideos, setTutorialVideos] = useState<Record<string, { id: string; title: string; video_path: string }>>({});
+  const [activeTutorialKey, setActiveTutorialKey] = useState<string | null>(null);
+  const [activeTutorialUrl, setActiveTutorialUrl] = useState('');
+  const [activeTutorialTitle, setActiveTutorialTitle] = useState('');
+  const [showManageTutorials, setShowManageTutorials] = useState(false);
+  const [uploadingTutorialKey, setUploadingTutorialKey] = useState<string | null>(null);
+  const tutorialFileInputRef = useRef<HTMLInputElement>(null);
+  const tutorialSlideFileInputRef = useRef<HTMLInputElement>(null);
+  const [tutorialSlidesMap, setTutorialSlidesMap] = useState<Record<string, { id: string; step_order: number; image_path: string; caption: string }[]>>({});
+  const [activeTutorialSlides, setActiveTutorialSlides] = useState<{ id: string; image_path: string; caption: string }[] | null>(null);
+  const [activeTutorialSlideIndex, setActiveTutorialSlideIndex] = useState(0);
+  const [activeTutorialSlideUrl, setActiveTutorialSlideUrl] = useState('');
+  const [activeTutorialSlidePlaying, setActiveTutorialSlidePlaying] = useState(true);
+  const [newSlideCaption, setNewSlideCaption] = useState('');
+  const [addingSlideForKey, setAddingSlideForKey] = useState<string | null>(null);
   const [showLayoutPanel, setShowLayoutPanel] = useState(false);
   const [showAdminToolsRow, setShowAdminToolsRow] = useState(false);
   const [showHelpPanel, setShowHelpPanel] = useState(false);
@@ -320,6 +343,7 @@ export default function App() {
       loadFolders();
       loadSiteSettings();
       loadSlideshows();
+      loadTutorialVideos();
     }
   }, [session]);
 
@@ -865,6 +889,132 @@ export default function App() {
   }
 
   // ---- Saved slideshows (photos + order + music, all remembered for next time) ----
+  // ---- Tutorial / how-to videos ----
+  async function loadTutorialVideos() {
+    const { data, error } = await supabase.from('tutorial_videos').select('*');
+    if (error || !data) return;
+    const map: Record<string, { id: string; title: string; video_path: string }> = {};
+    for (const row of data as any[]) map[row.feature_key] = row;
+    setTutorialVideos(map);
+    await loadTutorialSlides();
+
+    // First time ever for this browser: auto-show the onboarding video, if one exists.
+    const seenOnboarding = window.localStorage.getItem('seenOnboardingTutorial');
+    if (!seenOnboarding && map['onboarding']) {
+      window.localStorage.setItem('seenOnboardingTutorial', 'true');
+      openTutorial('onboarding', map);
+    }
+  }
+
+  async function loadTutorialSlides() {
+    const { data, error } = await supabase
+      .from('tutorial_slides')
+      .select('*')
+      .order('step_order', { ascending: true });
+    if (error || !data) return;
+    const grouped: Record<string, { id: string; step_order: number; image_path: string; caption: string }[]> = {};
+    for (const row of data as any[]) {
+      if (!grouped[row.feature_key]) grouped[row.feature_key] = [];
+      grouped[row.feature_key].push(row);
+    }
+    setTutorialSlidesMap(grouped);
+  }
+
+  async function openTutorial(key: string, videosMap?: Record<string, { id: string; title: string; video_path: string }>) {
+    const videos = videosMap || tutorialVideos;
+    const video = videos[key];
+    if (video) {
+      const { data } = await supabase.storage.from('tutorial_videos').createSignedUrl(video.video_path, 3600);
+      if (data) {
+        setActiveTutorialKey(key);
+        setActiveTutorialUrl(data.signedUrl);
+        setActiveTutorialTitle(video.title);
+      }
+      return;
+    }
+    const slides = tutorialSlidesMap[key];
+    if (slides && slides.length > 0) {
+      setActiveTutorialSlides(slides);
+      setActiveTutorialSlideIndex(0);
+      setActiveTutorialSlidePlaying(true);
+      setActiveTutorialTitle(TUTORIAL_KEYS.find((t) => t.key === key)?.label || key);
+    }
+  }
+
+  function closeTutorial() {
+    setActiveTutorialKey(null);
+    setActiveTutorialUrl('');
+    setActiveTutorialTitle('');
+    setActiveTutorialSlides(null);
+    setActiveTutorialSlideUrl('');
+  }
+
+  async function addTutorialSlide(key: string, file: File, caption: string) {
+    const existing = tutorialSlidesMap[key] || [];
+    const nextOrder = existing.length > 0 ? Math.max(...existing.map((s) => s.step_order)) + 1 : 1;
+    const path = `slides/${key}/${crypto.randomUUID()}-${file.name}`;
+    const { error: uploadError } = await supabase.storage.from('tutorial_videos').upload(path, file);
+    if (!uploadError) {
+      await supabase.from('tutorial_slides').insert({
+        feature_key: key,
+        step_order: nextOrder,
+        image_path: path,
+        caption,
+      });
+      loadTutorialSlides();
+    }
+  }
+
+  async function deleteTutorialSlide(slideId: string, imagePath: string) {
+    await supabase.storage.from('tutorial_videos').remove([imagePath]);
+    await supabase.from('tutorial_slides').delete().eq('id', slideId);
+    loadTutorialSlides();
+  }
+
+  async function moveTutorialSlide(key: string, slideId: string, direction: -1 | 1) {
+    const slides = [...(tutorialSlidesMap[key] || [])];
+    const idx = slides.findIndex((s) => s.id === slideId);
+    const swapIdx = idx + direction;
+    if (idx === -1 || swapIdx < 0 || swapIdx >= slides.length) return;
+    const a = slides[idx];
+    const b = slides[swapIdx];
+    await supabase.from('tutorial_slides').update({ step_order: b.step_order }).eq('id', a.id);
+    await supabase.from('tutorial_slides').update({ step_order: a.step_order }).eq('id', b.id);
+    loadTutorialSlides();
+  }
+
+  async function uploadTutorialVideo(key: string, label: string, file: File) {
+    setUploadingTutorialKey(key);
+    const path = `${key}/${crypto.randomUUID()}-${file.name}`;
+    const existing = tutorialVideos[key];
+    const { error: uploadError } = await supabase.storage.from('tutorial_videos').upload(path, file);
+    if (!uploadError) {
+      if (existing) {
+        await supabase.from('tutorial_videos').update({ title: label, video_path: path }).eq('id', existing.id);
+        await supabase.storage.from('tutorial_videos').remove([existing.video_path]);
+      } else {
+        await supabase.from('tutorial_videos').insert({ feature_key: key, title: label, video_path: path });
+      }
+      loadTutorialVideos();
+    }
+    setUploadingTutorialKey(null);
+  }
+
+  async function deleteTutorialVideo(key: string) {
+    const existing = tutorialVideos[key];
+    if (!existing) return;
+    const ok = window.confirm('Remove this how-to video?');
+    if (!ok) return;
+    await supabase.storage.from('tutorial_videos').remove([existing.video_path]);
+    await supabase.from('tutorial_videos').delete().eq('id', existing.id);
+    setTutorialVideos((prev) => {
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }
+
+  // ---- Saved slideshows (photos + order + music, all remembered for next time) ----
   async function loadSlideshows() {
     const { data, error } = await supabase
       .from('slideshows')
@@ -964,6 +1114,10 @@ export default function App() {
       }
     }
     startSlideshow(ordered);
+  }
+
+  function hasTutorial(key: string) {
+    return !!tutorialVideos[key] || (tutorialSlidesMap[key]?.length || 0) > 0;
   }
 
   function handlePhotoDragStart(e: React.DragEvent, photoId: string) {
@@ -1509,6 +1663,24 @@ export default function App() {
     return Math.min(Math.max(perPhoto, 2), 15) * 1000;
   }, [slideshowPhotos, slideshowMusicDuration]);
 
+  // Tutorial slides: load the current step's image + auto-advance
+  useEffect(() => {
+    if (!activeTutorialSlides) return;
+    const current = activeTutorialSlides[activeTutorialSlideIndex];
+    if (!current) return;
+    (async () => {
+      const { data } = await supabase.storage.from('tutorial_videos').createSignedUrl(current.image_path, 3600);
+      if (data) setActiveTutorialSlideUrl(data.signedUrl);
+    })();
+  }, [activeTutorialSlides, activeTutorialSlideIndex]);
+
+  useEffect(() => {
+    if (!activeTutorialSlides || !activeTutorialSlidePlaying) return;
+    if (activeTutorialSlideIndex >= activeTutorialSlides.length - 1) return;
+    const timer = setTimeout(() => setActiveTutorialSlideIndex((i) => i + 1), 5000);
+    return () => clearTimeout(timer);
+  }, [activeTutorialSlides, activeTutorialSlideIndex, activeTutorialSlidePlaying]);
+
   // Auto-advance timer — only for photos. Videos advance on their own "ended" event instead.
   useEffect(() => {
     if (!slideshowPhotos || !slideshowPlaying) return;
@@ -1740,6 +1912,9 @@ export default function App() {
                 <button className={'nav-pill' + (showLayoutPanel ? ' active' : '')} onClick={() => setShowLayoutPanel((v) => !v)}>
                   ⚙️ {showLayoutPanel ? 'Hide layout settings' : 'Layout settings'}
                 </button>
+                <button className={'nav-pill' + (showManageTutorials ? ' active' : '')} onClick={() => setShowManageTutorials((v) => !v)}>
+                  🎬 {showManageTutorials ? 'Hide tutorial videos' : 'Tutorial videos'}
+                </button>
               </div>
             )}
           </div>
@@ -1857,7 +2032,11 @@ export default function App() {
 
       {showMessagesPanel && (
         <div ref={messagesPanelRef} className="admin-panel messages-panel" style={{ order: sectionOrder.indexOf('messages') }}>
-          <h3>Messages</h3>
+          <h3>Messages
+            {hasTutorial('messages') && (
+              <button className="linklike tutorial-btn" onClick={() => openTutorial('messages')}>▶️ How-to</button>
+            )}
+          </h3>
           <div className="messages-layout">
             <div className="thread-list">
               <div className="thread-list-heading">Direct messages</div>
@@ -2009,7 +2188,11 @@ export default function App() {
 
       {showMyPhotosPanel && (
         <div ref={myPhotosPanelRef} className="admin-panel myphotos-panel" style={{ order: sectionOrder.indexOf('myphotos') }}>
-          <h3>My Photos</h3>
+          <h3>My Photos
+            {hasTutorial('myphotos') && (
+              <button className="linklike tutorial-btn" onClick={() => openTutorial('myphotos')}>▶️ How-to</button>
+            )}
+          </h3>
           <p className="photo-desc myphotos-explainer">
             This shows only what <strong>you've</strong> uploaded, so you can organize your own shots into folders.
             To browse everyone's photos, use the main gallery below instead.
@@ -2218,6 +2401,101 @@ export default function App() {
         </div>
       )}
 
+      {isAdmin && showManageTutorials && (
+        <div className="admin-panel" style={{ order: -10 }}>
+          <h3>Tutorial videos</h3>
+          <p className="photo-desc">
+            Two ways to teach a feature: upload a real screen-recorded video, or build a step-by-step
+            "slideshow" out of a few screenshots with captions — often faster and just as clear.
+            The "Getting started" one plays automatically the first time someone new signs in.
+            The others show up as a small "▶️ How-to" button right next to that feature.
+          </p>
+          <input
+            type="file"
+            accept="video/*"
+            ref={tutorialFileInputRef}
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file && uploadingTutorialKey) {
+                const label = TUTORIAL_KEYS.find((t) => t.key === uploadingTutorialKey)?.label || uploadingTutorialKey;
+                uploadTutorialVideo(uploadingTutorialKey, label, file);
+              }
+              e.target.value = '';
+            }}
+          />
+          <input
+            type="file"
+            accept="image/*"
+            ref={tutorialSlideFileInputRef}
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file && addingSlideForKey) {
+                addTutorialSlide(addingSlideForKey, file, newSlideCaption.trim() || 'Step');
+                setNewSlideCaption('');
+                setAddingSlideForKey(null);
+              }
+              e.target.value = '';
+            }}
+          />
+          <div className="tutorial-manage-list">
+            {TUTORIAL_KEYS.map((t) => (
+              <div key={t.key} className="tutorial-manage-block">
+                <div className="tutorial-manage-row">
+                  <span className="tutorial-manage-label">{t.label}{hasTutorial(t.key) ? ' ✅' : ''}</span>
+                  <button
+                    className="linklike"
+                    disabled={uploadingTutorialKey === t.key}
+                    onClick={() => { setUploadingTutorialKey(t.key); tutorialFileInputRef.current?.click(); }}
+                  >
+                    {uploadingTutorialKey === t.key ? 'Uploading…' : tutorialVideos[t.key] ? 'Replace video' : 'Upload video'}
+                  </button>
+                  {tutorialVideos[t.key] && (
+                    <>
+                      <button className="linklike" onClick={() => openTutorial(t.key)}>Preview</button>
+                      <button className="linklike" onClick={() => deleteTutorialVideo(t.key)}>Remove video</button>
+                    </>
+                  )}
+                </div>
+
+                {(tutorialSlidesMap[t.key]?.length || 0) > 0 && (
+                  <div className="tutorial-slide-list">
+                    {tutorialSlidesMap[t.key].map((s, i) => (
+                      <div key={s.id} className="tutorial-slide-manage-row">
+                        <span>{i + 1}. {s.caption}</span>
+                        <button className="linklike" disabled={i === 0} onClick={() => moveTutorialSlide(t.key, s.id, -1)}>Up</button>
+                        <button className="linklike" disabled={i === tutorialSlidesMap[t.key].length - 1} onClick={() => moveTutorialSlide(t.key, s.id, 1)}>Down</button>
+                        <button className="linklike" onClick={() => deleteTutorialSlide(s.id, s.image_path)}>Remove</button>
+                      </div>
+                    ))}
+                    {!tutorialVideos[t.key] && (
+                      <button className="linklike" onClick={() => openTutorial(t.key)}>Preview slideshow</button>
+                    )}
+                  </div>
+                )}
+
+                {addingSlideForKey === t.key ? (
+                  <div className="msg-edit-row">
+                    <input
+                      placeholder="What's happening in this screenshot?"
+                      value={newSlideCaption}
+                      onChange={(e) => setNewSlideCaption(e.target.value)}
+                    />
+                    <button className="linklike" onClick={() => tutorialSlideFileInputRef.current?.click()}>Choose image</button>
+                    <button className="linklike" onClick={() => setAddingSlideForKey(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <button className="linklike" onClick={() => setAddingSlideForKey(t.key)}>
+                    + Add a step-by-step screenshot
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {isAdmin && showAdminPanel && (
         <div className="admin-panel" style={{ order: -10 }}>
           <h3>Guest list</h3>
@@ -2411,6 +2689,9 @@ export default function App() {
             <div className="upload-fab-panel">
               <div className="upload-fab-panel-header">
                 <strong>Add photos or videos</strong>
+                {hasTutorial('uploading') && (
+                  <button className="linklike" onClick={() => openTutorial('uploading')}>▶️ How-to</button>
+                )}
                 <button className="linklike" onClick={() => setShowUploadPanel(false)}>Close</button>
               </div>
               <div
@@ -2775,6 +3056,9 @@ export default function App() {
           </div>
 
           <div className="slideshow-music-bar">
+            {hasTutorial('slideshows') && (
+              <button className="linklike" onClick={() => openTutorial('slideshows')}>▶️ How-to</button>
+            )}
             <input
               type="file"
               accept="audio/*"
@@ -2828,6 +3112,58 @@ export default function App() {
               style={{ display: 'none' }}
             />
           )}
+        </div>
+      )}
+
+      {(activeTutorialKey || activeTutorialSlides) && (
+        <div className="tutorial-overlay" onClick={closeTutorial}>
+          <div className="tutorial-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="tutorial-modal-header">
+              <strong>{activeTutorialTitle}</strong>
+              <button className="linklike" onClick={closeTutorial}>✕ Close</button>
+            </div>
+            {activeTutorialKey && (
+              activeTutorialUrl ? (
+                <video src={activeTutorialUrl} controls autoPlay style={{ width: '100%', maxHeight: '70vh' }} />
+              ) : (
+                <div className="empty-state">Loading…</div>
+              )
+            )}
+            {activeTutorialSlides && (
+              <>
+                <div className="tutorial-slide-stage">
+                  {activeTutorialSlideUrl ? (
+                    <img src={activeTutorialSlideUrl} alt="" />
+                  ) : (
+                    <div className="empty-state">Loading…</div>
+                  )}
+                </div>
+                <div className="tutorial-slide-caption">
+                  {activeTutorialSlides[activeTutorialSlideIndex]?.caption}
+                </div>
+                <div className="tutorial-slide-controls">
+                  <button
+                    onClick={() => setActiveTutorialSlideIndex((i) => Math.max(0, i - 1))}
+                    disabled={activeTutorialSlideIndex === 0}
+                  >
+                    ⏮ Prev
+                  </button>
+                  <button onClick={() => setActiveTutorialSlidePlaying((v) => !v)}>
+                    {activeTutorialSlidePlaying ? '⏸ Pause' : '▶️ Play'}
+                  </button>
+                  <button
+                    onClick={() => setActiveTutorialSlideIndex((i) => Math.min(activeTutorialSlides.length - 1, i + 1))}
+                    disabled={activeTutorialSlideIndex === activeTutorialSlides.length - 1}
+                  >
+                    Next ⏭
+                  </button>
+                  <span className="slideshow-counter">
+                    {activeTutorialSlideIndex + 1} / {activeTutorialSlides.length}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
     </div>
