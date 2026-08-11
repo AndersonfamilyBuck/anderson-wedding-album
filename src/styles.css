@@ -195,3 +195,12 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
 .slideshow-controls button{ background:rgba(255,255,255,0.08); border:1px solid rgba(201,166,107,0.4); color:var(--ivory); padding:12px 20px; border-radius:8px; font-size:16px; cursor:pointer; }
 .slideshow-controls button:hover{ border-color:var(--gold); background:rgba(201,166,107,0.2); }
 .slideshow-counter{ color:rgba(243,236,228,0.7); font-size:14px; font-family:'IBM Plex Mono', monospace; }
+
+.myphotos-explainer{ margin-bottom:16px; max-width:640px; }
+
+.takedown-row{ margin-top:12px; text-align:left; }
+.takedown-list{ display:flex; flex-direction:column; gap:12px; }
+.takedown-request-row{ display:flex; gap:14px; align-items:flex-start; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); border-radius:8px; padding:12px; }
+.takedown-thumb{ width:72px; height:72px; object-fit:cover; border-radius:6px; flex-shrink:0; }
+.takedown-info{ flex:1; font-size:13px; display:flex; flex-direction:column; gap:2px; }
+.takedown-actions{ display:flex; flex-direction:column; gap:6px; flex-shrink:0; }
