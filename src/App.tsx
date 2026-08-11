@@ -42,6 +42,8 @@ const CONFIG = {
   HEADLINE: 'Share Your Photos & Videos From The Big Day',
   COUPLE: 'The Newlyweds',
   DATE: 'August 8, 2026',
+  SITE_URL: 'https://anderson-wedding-album.vercel.app',
+  INVITE_WEBHOOK_URL: '', // paste your Zapier "Catch Hook" URL here once created
 };
 
 const MAX_PREVIEW_DIM = 1200;
@@ -128,6 +130,11 @@ export default function App() {
   const [myPhotosFilter, setMyPhotosFilter] = useState<'mine' | 'all'>('mine');
   const [addToFolderChoice, setAddToFolderChoice] = useState('');
 
+  const [sectionOrder, setSectionOrder] = useState<string[]>(['upload', 'gallery', 'messages', 'myphotos']);
+  const [showLayoutPanel, setShowLayoutPanel] = useState(false);
+  const [layoutSort, setLayoutSort] = useState<'newest' | 'oldest' | 'uploader'>('newest');
+  const [layoutSaved, setLayoutSaved] = useState(false);
+
   const [photoComments, setPhotoComments] = useState<MessageRecord[]>([]);
   const [newCommentBody, setNewCommentBody] = useState('');
 
@@ -154,6 +161,7 @@ export default function App() {
       loadDirectory();
       loadGroups();
       loadFolders();
+      loadSiteSettings();
     }
   }, [session]);
 
@@ -623,12 +631,108 @@ export default function App() {
     if (photoId) addPhotoToFolder(photoId, folderId);
   }
 
+  // ---- Site layout settings ----
+  async function loadSiteSettings() {
+    const { data, error } = await supabase.from('site_settings').select('*').eq('id', 1).maybeSingle();
+    if (error || !data) return;
+    if (Array.isArray(data.section_order) && data.section_order.length === 4) {
+      setSectionOrder(data.section_order);
+    }
+    if (data.default_sort) {
+      setSortOrder(data.default_sort as any);
+      setLayoutSort(data.default_sort as any);
+    }
+  }
+
+  function moveSectionUp(key: string) {
+    setSectionOrder((prev) => {
+      const idx = prev.indexOf(key);
+      if (idx <= 0) return prev;
+      const next = [...prev];
+      [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+      return next;
+    });
+    setLayoutSaved(false);
+  }
+
+  function moveSectionDown(key: string) {
+    setSectionOrder((prev) => {
+      const idx = prev.indexOf(key);
+      if (idx === -1 || idx >= prev.length - 1) return prev;
+      const next = [...prev];
+      [next[idx + 1], next[idx]] = [next[idx], next[idx + 1]];
+      return next;
+    });
+    setLayoutSaved(false);
+  }
+
+  async function saveLayoutSettings() {
+    const { error } = await supabase
+      .from('site_settings')
+      .update({ default_sort: layoutSort, section_order: sectionOrder, updated_at: new Date().toISOString() })
+      .eq('id', 1);
+    if (!error) {
+      setSortOrder(layoutSort);
+      setLayoutSaved(true);
+    }
+  }
+
+  const sectionLabels: Record<string, string> = {
+    upload: 'Upload box',
+    gallery: 'Gallery & filters',
+    messages: 'Messages panel',
+    myphotos: 'My Photos panel',
+  };
+
+  const [inviteName, setInviteName] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteStatus, setInviteStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
+  const [inviteErrorMsg, setInviteErrorMsg] = useState('');
+
+  async function sendInviteEmail(e: React.FormEvent) {
+    e.preventDefault();
+    setInviteErrorMsg('');
+    if (!CONFIG.INVITE_WEBHOOK_URL) {
+      setInviteErrorMsg('The invite webhook isn\'t set up yet — add the Zapier URL to CONFIG.INVITE_WEBHOOK_URL.');
+      return;
+    }
+    const name = inviteName.trim();
+    const email = inviteEmail.trim();
+    if (!name || !email) return;
+    setInviteStatus('sending');
+    try {
+      await fetch(CONFIG.INVITE_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, site_url: CONFIG.SITE_URL }),
+      });
+      setInviteStatus('sent');
+      setInviteName('');
+      setInviteEmail('');
+    } catch {
+      setInviteStatus('error');
+    }
+  }
+
   async function toggleGuestDisabled(email: string, current: boolean) {
     if (email === session.user.email) {
       setGuestError("You can't disable yourself.");
       return;
     }
     await supabase.from('allowed_guests').update({ is_disabled: !current }).eq('email', email);
+    loadGuestInfo();
+  }
+
+  async function toggleGuestAdmin(email: string, current: boolean) {
+    if (email === session.user.email && current) {
+      setGuestError("You can't remove your own admin access.");
+      return;
+    }
+    const { error } = await supabase.from('allowed_guests').update({ is_admin: !current }).eq('email', email);
+    if (error) {
+      setGuestError(error.message);
+      return;
+    }
     loadGuestInfo();
   }
 
@@ -746,7 +850,18 @@ export default function App() {
     return data.signedUrl;
   }
 
-  function resizeImageToBlob(file: File, maxDim: number, quality: number): Promise<Blob> {
+  async function fileToImageSource(file: File): Promise<Blob> {
+    const isHeic =
+      file.type === 'image/heic' ||
+      file.type === 'image/heif' ||
+      /\.(heic|heif)$/i.test(file.name);
+    if (!isHeic) return file;
+    const { default: heic2any } = await import('heic2any');
+    const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+    return Array.isArray(converted) ? converted[0] : converted;
+  }
+
+  function resizeImageToBlob(source: Blob, maxDim: number, quality: number): Promise<Blob> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onerror = () => reject(new Error('Could not read file'));
@@ -754,6 +869,10 @@ export default function App() {
         const img = new Image();
         img.onerror = () => reject(new Error('Could not decode image'));
         img.onload = () => {
+          if (!img.naturalWidth || !img.naturalHeight) {
+            reject(new Error('Image decoded with zero dimensions'));
+            return;
+          }
           let w = img.width, h = img.height;
           if (w > maxDim || h > maxDim) {
             if (w > h) { h = Math.round(h * (maxDim / w)); w = maxDim; }
@@ -763,13 +882,34 @@ export default function App() {
           canvas.width = w; canvas.height = h;
           const ctx = canvas.getContext('2d')!;
           ctx.drawImage(img, 0, 0, w, h);
+
+          // Some browsers "succeed" at decoding formats they don't really support (e.g. HEIC)
+          // but actually render a blank frame. Sample a few pixels — if they're all identical,
+          // treat it as a failed decode rather than uploading a broken-looking blank preview.
+          try {
+            const sample = ctx.getImageData(0, 0, Math.min(w, 20), Math.min(h, 20)).data;
+            let allSame = true;
+            for (let i = 4; i < sample.length; i += 4) {
+              if (sample[i] !== sample[0] || sample[i + 1] !== sample[1] || sample[i + 2] !== sample[2]) {
+                allSame = false;
+                break;
+              }
+            }
+            if (allSame) {
+              reject(new Error('Preview came out blank — likely an unsupported photo format'));
+              return;
+            }
+          } catch {
+            // If getImageData throws, just proceed and trust toBlob.
+          }
+
           canvas.toBlob((blob) => {
             if (blob) resolve(blob); else reject(new Error('toBlob failed'));
           }, 'image/jpeg', quality);
         };
         img.src = reader.result as string;
       };
-      reader.readAsDataURL(file);
+      reader.readAsDataURL(source);
     });
   }
 
@@ -821,7 +961,7 @@ export default function App() {
         try {
           const previewBlob = isVideo
             ? await captureVideoThumbnail(file)
-            : await resizeImageToBlob(file, MAX_PREVIEW_DIM, PREVIEW_QUALITY);
+            : await resizeImageToBlob(await fileToImageSource(file), MAX_PREVIEW_DIM, PREVIEW_QUALITY);
           previewPath = `${id}/preview.jpg`;
           await supabase.storage
             .from('previews')
@@ -854,7 +994,14 @@ export default function App() {
     setLightbox(p);
     setPhotoComments([]);
     setNewCommentBody('');
-    const url = await getSignedUrl('originals', p.original_path);
+    const isHeic = /\.(heic|heif)$/i.test(p.original_path);
+    // Most browsers (everything but Safari) can't display HEIC inline, so for viewing
+    // we show the already-converted preview instead. "Download high-res" still gets
+    // the real, untouched original file.
+    const url =
+      isHeic && p.preview_path
+        ? await getSignedUrl('previews', p.preview_path)
+        : await getSignedUrl('originals', p.original_path);
     setLightboxUrl(url);
     loadPhotoComments(p.id);
   }
@@ -982,13 +1129,17 @@ export default function App() {
               <button className="linklike" onClick={() => setShowRequestsPanel((v) => !v)}>
                 {showRequestsPanel ? 'Hide requests' : `Access requests${pendingRequests.length ? ` (${pendingRequests.length})` : ''}`}
               </button>
+              {' · '}
+              <button className="linklike" onClick={() => setShowLayoutPanel((v) => !v)}>
+                {showLayoutPanel ? 'Hide layout settings' : 'Manage layout'}
+              </button>
             </>
           )}
         </div>
       </div>
 
       {showMessagesPanel && (
-        <div className="admin-panel messages-panel">
+        <div className="admin-panel messages-panel" style={{ order: sectionOrder.indexOf('messages') }}>
           <h3>Messages</h3>
           <div className="messages-layout">
             <div className="thread-list">
@@ -1131,7 +1282,7 @@ export default function App() {
       )}
 
       {showMyPhotosPanel && (
-        <div className="admin-panel myphotos-panel">
+        <div className="admin-panel myphotos-panel" style={{ order: sectionOrder.indexOf('myphotos') }}>
           <h3>My Photos</h3>
 
           <div className="myphotos-toolbar">
@@ -1227,8 +1378,43 @@ export default function App() {
         </div>
       )}
 
+      {isAdmin && showLayoutPanel && (
+        <div className="admin-panel" style={{ order: -10 }}>
+          <h3>Manage layout</h3>
+          <p className="photo-desc">
+            Choose what every guest sees first, and the order sections appear in when opened.
+          </p>
+
+          <div className="layout-sort-row">
+            <label>Default gallery sort:</label>
+            <select value={layoutSort} onChange={(e) => { setLayoutSort(e.target.value as any); setLayoutSaved(false); }}>
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="uploader">By submitter name</option>
+            </select>
+          </div>
+
+          <div className="thread-list-heading">Section order (top to bottom)</div>
+          <div className="layout-order-list">
+            {sectionOrder.map((key, i) => (
+              <div key={key} className="layout-order-row">
+                <span>{i + 1}. {sectionLabels[key]}</span>
+                <div>
+                  <button className="linklike" disabled={i === 0} onClick={() => moveSectionUp(key)}>Up</button>
+                  {' · '}
+                  <button className="linklike" disabled={i === sectionOrder.length - 1} onClick={() => moveSectionDown(key)}>Down</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button className="btn-upload" onClick={saveLayoutSettings}>Save layout</button>
+          {layoutSaved && <span className="photo-desc"> Saved — this now applies to every guest.</span>}
+        </div>
+      )}
+
       {isAdmin && showAdminPanel && (
-        <div className="admin-panel">
+        <div className="admin-panel" style={{ order: -10 }}>
           <h3>Guest list</h3>
           <div className="guest-rows">
             {guestList.map((g) => (
@@ -1239,6 +1425,9 @@ export default function App() {
                 {g.is_disabled && <span className="disabled-badge">disabled</span>}
                 {g.email !== session.user.email && (
                   <>
+                    <button className="toggle-btn" onClick={() => toggleGuestAdmin(g.email, g.is_admin)}>
+                      {g.is_admin ? 'Remove admin' : 'Make admin'}
+                    </button>
                     <button className="toggle-btn" onClick={() => toggleGuestDisabled(g.email, g.is_disabled)}>
                       {g.is_disabled ? 'Enable' : 'Disable'}
                     </button>
@@ -1254,11 +1443,22 @@ export default function App() {
             <button className="btn-upload" type="submit">Add to guest list</button>
           </form>
           {guestError && <div className="gate-error">{guestError}</div>}
+
+          <div className="thread-list-heading">Send an invite email (for people who got blocked signing in)</div>
+          <form className="add-guest-form" onSubmit={sendInviteEmail}>
+            <input placeholder="Name" value={inviteName} onChange={(e) => setInviteName(e.target.value)} />
+            <input placeholder="Email" type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
+            <button className="btn-upload" type="submit" disabled={inviteStatus === 'sending'}>
+              {inviteStatus === 'sending' ? 'Sending…' : 'Send invite'}
+            </button>
+          </form>
+          {inviteStatus === 'sent' && <div className="photo-desc">Invite sent!</div>}
+          {inviteErrorMsg && <div className="gate-error">{inviteErrorMsg}</div>}
         </div>
       )}
 
       {isAdmin && showCategoryPanel && (
-        <div className="admin-panel">
+        <div className="admin-panel" style={{ order: -10 }}>
           <h3>Categories</h3>
           <div className="guest-rows">
             {categories.map((c) => (
@@ -1278,7 +1478,7 @@ export default function App() {
       )}
 
       {isAdmin && showRequestsPanel && (
-        <div className="admin-panel">
+        <div className="admin-panel" style={{ order: -10 }}>
           <h3>Access requests</h3>
           <div className="guest-rows">
             {pendingRequests.map((r) => (
@@ -1319,7 +1519,7 @@ export default function App() {
 
       {!notAllowed && (
         <>
-          <div className="upload-zone">
+          <div className="upload-zone" style={{ order: sectionOrder.indexOf('upload') }}>
             <div
               className={`upload-box${isDragOver ? ' dragover' : ''}`}
               onDragEnter={(e) => { e.preventDefault(); setIsDragOver(true); }}
@@ -1373,7 +1573,7 @@ export default function App() {
             )}
           </div>
 
-          <div className="filters">
+          <div className="filters" style={{ order: sectionOrder.indexOf('gallery') }}>
             <select value={uploaderFilter} onChange={(e) => setUploaderFilter(e.target.value)}>
               <option value="all">Everyone</option>
               {uploaderNames.map((n) => (
@@ -1401,7 +1601,7 @@ export default function App() {
             </select>
           </div>
 
-          <div className="gallery-wrap">
+          <div className="gallery-wrap" style={{ order: sectionOrder.indexOf('gallery') }}>
             {loadingGallery ? (
               <div className="empty-state">Loading photos…</div>
             ) : filteredPhotos.length === 0 ? (
