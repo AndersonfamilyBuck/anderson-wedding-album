@@ -130,3 +130,21 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
 
 .msg-edit-row{ display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
 .msg-edit-row input{ flex:1; min-width:120px; padding:6px 8px; border-radius:3px; border:1px solid rgba(201,166,107,0.4); background:rgba(255,255,255,0.9); color:var(--ink); font-size:13px; }
+
+/* My Photos */
+.myphotos-panel{ max-width:820px; }
+.myphotos-toolbar{ display:flex; gap:8px; margin-bottom:14px; }
+.folder-row{ display:flex; flex-wrap:wrap; gap:10px; margin:10px 0; }
+.folder-chip{ display:flex; align-items:center; gap:6px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.15); border-radius:6px; padding:8px 10px; font-size:13px; transition:border-color 0.15s, background 0.15s; }
+.folder-chip span{ cursor:pointer; font-weight:600; }
+.folder-chip.active{ border-color:var(--gold); background:rgba(201,166,107,0.15); }
+.folder-chip.drag-over{ border-color:var(--gold); background:rgba(201,166,107,0.3); }
+.new-folder-form{ display:flex; gap:8px; margin:10px 0 16px; }
+.new-folder-form input{ flex:1; padding:9px 10px; border-radius:3px; border:1px solid rgba(201,166,107,0.4); background:rgba(255,255,255,0.9); color:var(--ink); font-size:13px; }
+.myphotos-grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:10px; }
+.myphotos-thumb{ position:relative; border-radius:6px; overflow:hidden; background:rgba(255,255,255,0.05); cursor:grab; }
+.myphotos-thumb img{ width:100%; aspect-ratio:1; object-fit:cover; display:block; }
+.myphotos-thumb .linklike{ display:block; width:100%; text-align:center; font-size:11px; padding:4px 0; background:rgba(0,0,0,0.4); color:var(--ivory); }
+
+.add-to-folder-row{ display:flex; gap:8px; margin-top:10px; }
+.add-to-folder-row select{ flex:1; padding:8px 10px; border-radius:3px; border:1px solid rgba(201,166,107,0.4); background:rgba(255,255,255,0.9); color:var(--ink); font-size:13px; }
