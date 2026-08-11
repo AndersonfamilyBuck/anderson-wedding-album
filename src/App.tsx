@@ -200,7 +200,8 @@ export default function App() {
   const [shareFolderTarget, setShareFolderTarget] = useState('');
   const [shareFolderSent, setShareFolderSent] = useState(false);
 
-  const [sectionOrder, setSectionOrder] = useState<string[]>(['showcase', 'upload', 'gallery', 'messages', 'myphotos']);
+  const [sectionOrder, setSectionOrder] = useState<string[]>(['showcase', 'gallery', 'messages', 'myphotos']);
+  const [showUploadPanel, setShowUploadPanel] = useState(false);
   const [showLayoutPanel, setShowLayoutPanel] = useState(false);
   const [showAdminToolsRow, setShowAdminToolsRow] = useState(false);
   const [showHelpPanel, setShowHelpPanel] = useState(false);
@@ -210,6 +211,18 @@ export default function App() {
   useEffect(() => {
     const lastSeen = window.localStorage.getItem('lastSeenVersion');
     setHasUnseenUpdate(lastSeen !== CURRENT_VERSION);
+  }, []);
+
+  // Dragging a file anywhere on the page opens the upload panel automatically,
+  // so people don't have to hunt for the button first.
+  useEffect(() => {
+    function handleWindowDragEnter(e: DragEvent) {
+      if (e.dataTransfer?.types?.includes('Files')) {
+        setShowUploadPanel(true);
+      }
+    }
+    window.addEventListener('dragenter', handleWindowDragEnter);
+    return () => window.removeEventListener('dragenter', handleWindowDragEnter);
   }, []);
 
   function openWhatsNew() {
@@ -965,16 +978,18 @@ export default function App() {
   }
 
   // ---- Site layout settings ----
+  const VALID_SECTIONS = ['showcase', 'gallery', 'messages', 'myphotos'];
+  function normalizeSectionOrder(stored: string[]): string[] {
+    const filtered = stored.filter((k) => VALID_SECTIONS.includes(k));
+    const missing = VALID_SECTIONS.filter((k) => !filtered.includes(k));
+    return [...filtered, ...missing];
+  }
+
   async function loadSiteSettings() {
     const { data, error } = await supabase.from('site_settings').select('*').eq('id', 1).maybeSingle();
     if (error || !data) return;
     if (Array.isArray(data.section_order)) {
-      if (data.section_order.length === 5) {
-        setSectionOrder(data.section_order);
-      } else if (data.section_order.length === 4 && !data.section_order.includes('showcase')) {
-        // Settings saved before the Showcase feed existed — add it at the front by default.
-        setSectionOrder(['showcase', ...data.section_order]);
-      }
+      setSectionOrder(normalizeSectionOrder(data.section_order));
     }
     if (data.default_sort) {
       setSortOrder(data.default_sort as any);
@@ -1017,7 +1032,6 @@ export default function App() {
 
   const sectionLabels: Record<string, string> = {
     showcase: 'Showcase feed',
-    upload: 'Upload box',
     gallery: 'Gallery & filters',
     messages: 'Messages panel',
     myphotos: 'My Photos panel',
@@ -1686,11 +1700,10 @@ export default function App() {
           Signed in as {session.user.user_metadata?.display_name || session.user.email}
         </div>
 
-        <button className="whats-new-link" onClick={openWhatsNew}>
-          🆕 What's new{hasUnseenUpdate && <span className="unseen-dot" />}
-        </button>
-
         <div className="nav-pills">
+          <button className={'nav-pill' + (hasUnseenUpdate ? ' has-unseen' : '')} onClick={openWhatsNew}>
+            🆕 What's new{hasUnseenUpdate && <span className="unseen-dot" />}
+          </button>
           <button className="nav-pill" onClick={() => setShowHelpPanel((v) => !v)}>
             {showHelpPanel ? '✕ Close help' : '❓ How this works'}
           </button>
@@ -2387,59 +2400,72 @@ export default function App() {
             </div>
           )}
 
-          <div className="upload-zone" style={{ order: sectionOrder.indexOf('upload') }}>
-            <div
-              className={`upload-box${isDragOver ? ' dragover' : ''}`}
-              onDragEnter={(e) => { e.preventDefault(); setIsDragOver(true); }}
-              onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-              onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
-              onDrop={(e) => {
-                e.preventDefault();
-                setIsDragOver(false);
-                const files = Array.from(e.dataTransfer.files || []).filter(
-                  (f) => f.type.startsWith('image/') || f.type.startsWith('video/')
-                );
-                handleFiles(files);
-              }}
-            >
-              <p>Drag photos or videos here, or add a description and choose files below</p>
-              <input
-                className="desc-input"
-                placeholder="e.g. First dance"
-                value={batchDescription}
-                onChange={(e) => setBatchDescription(e.target.value)}
-              />
-              {categories.length > 0 && (
-                <select
-                  className="desc-input"
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                >
-                  <option value="">No category</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.name}>{c.name}</option>
-                  ))}
-                </select>
-              )}
-              <button className="btn-upload" onClick={() => fileInputRef.current?.click()}>
-                Choose photos or videos
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*,video/*"
-                multiple
-                style={{ display: 'none' }}
-                onChange={(e) => {
-                  handleFiles(Array.from(e.target.files || []));
-                  e.target.value = '';
+          <button
+            className={'upload-fab' + (uploadingFiles.length > 0 ? ' uploading' : '')}
+            onClick={() => setShowUploadPanel((v) => !v)}
+          >
+            {showUploadPanel ? '✕' : uploadingFiles.length > 0 ? '⏳' : '📤'}
+          </button>
+
+          {showUploadPanel && (
+            <div className="upload-fab-panel">
+              <div className="upload-fab-panel-header">
+                <strong>Add photos or videos</strong>
+                <button className="linklike" onClick={() => setShowUploadPanel(false)}>Close</button>
+              </div>
+              <div
+                className={`upload-box${isDragOver ? ' dragover' : ''}`}
+                onDragEnter={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+                onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragOver(false);
+                  const files = Array.from(e.dataTransfer.files || []).filter(
+                    (f) => f.type.startsWith('image/') || f.type.startsWith('video/')
+                  );
+                  handleFiles(files);
                 }}
-              />
+              >
+                <p>Drag photos or videos here, or add a description and choose files below</p>
+                <input
+                  className="desc-input"
+                  placeholder="e.g. First dance"
+                  value={batchDescription}
+                  onChange={(e) => setBatchDescription(e.target.value)}
+                />
+                {categories.length > 0 && (
+                  <select
+                    className="desc-input"
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                  >
+                    <option value="">No category</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.name}>{c.name}</option>
+                    ))}
+                  </select>
+                )}
+                <button className="btn-upload" onClick={() => fileInputRef.current?.click()}>
+                  Choose photos or videos
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,video/*"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={(e) => {
+                    handleFiles(Array.from(e.target.files || []));
+                    e.target.value = '';
+                  }}
+                />
+              </div>
+              {uploadingFiles.length > 0 && (
+                <div className="upload-status">Uploading {uploadingFiles.join(', ')}…</div>
+              )}
             </div>
-            {uploadingFiles.length > 0 && (
-              <div className="upload-status">Uploading {uploadingFiles.join(', ')}…</div>
-            )}
-          </div>
+          )}
 
           <div className="filters" style={{ order: sectionOrder.indexOf('gallery') }}>
             <select value={uploaderFilter} onChange={(e) => setUploaderFilter(e.target.value)}>
