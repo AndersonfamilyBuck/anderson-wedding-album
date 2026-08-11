@@ -195,6 +195,14 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
 .slideshow-controls button{ background:rgba(255,255,255,0.08); border:1px solid rgba(201,166,107,0.4); color:var(--ivory); padding:12px 20px; border-radius:8px; font-size:16px; cursor:pointer; }
 .slideshow-controls button:hover{ border-color:var(--gold); background:rgba(201,166,107,0.2); }
 .slideshow-counter{ color:rgba(243,236,228,0.7); font-size:14px; font-family:'IBM Plex Mono', monospace; }
+.slideshow-music-bar{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; justify-content:center; margin-top:16px; color:var(--ivory); font-size:13px; }
+.slideshow-video-sound-toggle{ display:flex; align-items:center; gap:6px; cursor:pointer; }
+.save-slideshow-inline{ display:flex; align-items:center; gap:8px; }
+.save-slideshow-inline input{ padding:6px 10px; border-radius:4px; border:1px solid rgba(201,166,107,0.4); background:rgba(255,255,255,0.9); color:var(--ink); font-size:13px; }
+
+.saved-slideshows-list{ display:flex; flex-direction:column; gap:8px; margin:10px 0 20px; }
+.saved-slideshow-row{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; background:rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.12); border-radius:6px; padding:10px 14px; }
+.saved-slideshow-name{ font-weight:600; font-size:13px; margin-right:auto; }
 
 .myphotos-explainer{ margin-bottom:16px; max-width:640px; }
 
@@ -204,3 +212,7 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
 .takedown-thumb{ width:72px; height:72px; object-fit:cover; border-radius:6px; flex-shrink:0; }
 .takedown-info{ flex:1; font-size:13px; display:flex; flex-direction:column; gap:2px; }
 .takedown-actions{ display:flex; flex-direction:column; gap:6px; flex-shrink:0; }
+
+.share-folder-form{ display:flex; gap:8px; margin:10px 0; }
+.share-folder-form select{ flex:1; padding:8px 10px; border-radius:3px; border:1px solid rgba(201,166,107,0.4); background:rgba(255,255,255,0.9); color:var(--ink); font-size:13px; }
+.shared-folder-view-btn{ display:block; margin:6px 0; font-size:13px; padding:8px 14px; }
