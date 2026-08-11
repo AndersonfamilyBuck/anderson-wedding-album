@@ -148,3 +148,9 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
 
 .add-to-folder-row{ display:flex; gap:8px; margin-top:10px; }
 .add-to-folder-row select{ flex:1; padding:8px 10px; border-radius:3px; border:1px solid rgba(201,166,107,0.4); background:rgba(255,255,255,0.9); color:var(--ink); font-size:13px; }
+
+/* Layout settings */
+.layout-sort-row{ display:flex; align-items:center; gap:10px; margin:12px 0; }
+.layout-sort-row select{ padding:8px 10px; border-radius:3px; border:1px solid rgba(201,166,107,0.4); background:rgba(255,255,255,0.9); color:var(--ink); font-size:13px; }
+.layout-order-list{ display:flex; flex-direction:column; gap:6px; margin:10px 0 16px; max-width:420px; }
+.layout-order-row{ display:flex; justify-content:space-between; align-items:center; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:6px; padding:8px 12px; font-size:13px; }
