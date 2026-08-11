@@ -169,8 +169,8 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
 .nav-pill.subtle:hover{ opacity:1; border-color:rgba(243,236,228,0.5); background:rgba(255,255,255,0.08); }
 
 .admin-tools-row{ margin-top:10px; text-align:center; }
-.admin-pills{ margin-top:10px; max-width:600px; margin-left:auto; margin-right:auto; }
-.admin-pills .nav-pill{ flex:0 1 auto; border-color:rgba(180,140,90,0.5); background:rgba(180,140,90,0.08); font-size:12px; padding:7px 14px; min-height:auto; }
+.admin-pills{ margin-top:10px; max-width:900px; margin-left:auto; margin-right:auto; }
+.admin-pills .nav-pill{ border-color:rgba(180,140,90,0.5); background:rgba(180,140,90,0.1); }
 
 /* Help panel */
 .help-panel{ max-width:900px; }
@@ -179,6 +179,16 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
 .help-emoji{ font-size:22px; line-height:1; flex-shrink:0; }
 .help-item strong{ display:block; margin-bottom:4px; font-size:14px; }
 .help-item p{ margin:0; font-size:13px; color:rgba(243,236,228,0.8); line-height:1.5; }
+.help-section-title{ font-family:'IBM Plex Mono', monospace; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:var(--gold); margin:22px 0 6px; }
+.help-section-title:first-of-type{ margin-top:6px; }
+
+.whats-new-link{ display:inline-flex; align-items:center; gap:6px; background:none; border:none; color:var(--gold); font-size:13px; text-decoration:underline; cursor:pointer; margin-top:6px; }
+.unseen-dot{ width:8px; height:8px; border-radius:50%; background:#e0575f; display:inline-block; }
+.whats-new-panel{ max-width:600px; }
+.changelog-list{ display:flex; flex-direction:column; gap:18px; margin:14px 0 18px; }
+.changelog-version{ font-weight:700; color:var(--gold); font-size:14px; margin-bottom:4px; }
+.changelog-entry ul{ margin:0; padding-left:20px; }
+.changelog-entry li{ font-size:13px; color:rgba(243,236,228,0.85); margin-bottom:4px; line-height:1.5; }
 
 /* Selection mode + slideshow */
 .select-bar{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; background:rgba(201,166,107,0.12); border:1px solid rgba(201,166,107,0.35); border-radius:8px; padding:12px 16px; margin:0 0 18px; order:inherit; }
