@@ -34,6 +34,8 @@ interface MessageRecord {
   photo_id: string | null;
   body: string;
   created_at: string;
+  shared_photo_ids?: string[] | null;
+  shared_folder_name?: string | null;
 }
 
 type ThreadRef = { type: 'dm' | 'group'; id: string; label: string };
@@ -141,6 +143,9 @@ export default function App() {
     { id: string; photo_id: string; requested_by_email: string; reason: string | null; created_at: string }[]
   >([]);
   const [showTakedownPanel, setShowTakedownPanel] = useState(false);
+  const [showShareFolderForm, setShowShareFolderForm] = useState(false);
+  const [shareFolderTarget, setShareFolderTarget] = useState('');
+  const [shareFolderSent, setShareFolderSent] = useState(false);
 
   const [sectionOrder, setSectionOrder] = useState<string[]>(['upload', 'gallery', 'messages', 'myphotos']);
   const [showLayoutPanel, setShowLayoutPanel] = useState(false);
@@ -154,6 +159,22 @@ export default function App() {
   const [slideshowUrl, setSlideshowUrl] = useState('');
   const [slideshowPlaying, setSlideshowPlaying] = useState(true);
   const slideshowVideoRef = useRef<HTMLVideoElement>(null);
+  const slideshowMusicRef = useRef<HTMLAudioElement>(null);
+  const slideshowMusicInputRef = useRef<HTMLInputElement>(null);
+  const [slideshowMusicUrl, setSlideshowMusicUrl] = useState('');
+  const [slideshowMusicName, setSlideshowMusicName] = useState('');
+  const [slideshowMusicDuration, setSlideshowMusicDuration] = useState<number | null>(null);
+  const [slideshowUseVideoSound, setSlideshowUseVideoSound] = useState(false);
+  const [slideshowMusicFile, setSlideshowMusicFile] = useState<File | null>(null);
+  const [savedSlideshows, setSavedSlideshows] = useState<
+    { id: string; name: string; photo_ids: string[]; use_video_sound: boolean; music_path: string | null; music_name: string | null }[]
+  >([]);
+  const [showSaveSlideshowForm, setShowSaveSlideshowForm] = useState(false);
+  const [saveSlideshowName, setSaveSlideshowName] = useState('');
+  const [savingSlideshow, setSavingSlideshow] = useState(false);
+  const [shareSlideshowId, setShareSlideshowId] = useState<string | null>(null);
+  const [shareSlideshowTarget, setShareSlideshowTarget] = useState('');
+  const [shareSlideshowSentId, setShareSlideshowSentId] = useState<string | null>(null);
   const [layoutSort, setLayoutSort] = useState<'newest' | 'oldest' | 'uploader'>('newest');
   const [layoutSaved, setLayoutSaved] = useState(false);
 
@@ -219,6 +240,7 @@ export default function App() {
       loadGroups();
       loadFolders();
       loadSiteSettings();
+      loadSlideshows();
     }
   }, [session]);
 
@@ -710,6 +732,129 @@ export default function App() {
     setFolderPhotoIds((prev) => prev.filter((id) => id !== photoId));
   }
 
+  async function shareFolderInMessages(folderId: string, folderName: string, target: string) {
+    if (!target) return;
+    const photoIds = folderPhotoIds;
+    if (photoIds.length === 0) return;
+    const [targetType, targetValue] = target.split(':');
+    const row: any = {
+      sender_email: session.user.email,
+      body: `📁 Shared folder: ${folderName} (${photoIds.length} photo${photoIds.length === 1 ? '' : 's'})`,
+      shared_photo_ids: photoIds,
+      shared_folder_name: folderName,
+    };
+    if (targetType === 'dm') row.recipient_email = targetValue;
+    else row.group_id = targetValue;
+    const { error } = await supabase.from('messages').insert(row);
+    if (!error) {
+      setShareFolderSent(true);
+      setShowShareFolderForm(false);
+      setShareFolderTarget('');
+    }
+  }
+
+  // ---- Saved slideshows (photos + order + music, all remembered for next time) ----
+  async function loadSlideshows() {
+    const { data, error } = await supabase
+      .from('slideshows')
+      .select('*')
+      .order('created_at', { ascending: true });
+    if (error || !data) return;
+    setSavedSlideshows(data as any[]);
+  }
+
+  async function saveCurrentSlideshow() {
+    if (!slideshowPhotos) return;
+    const name = saveSlideshowName.trim();
+    if (!name) return;
+    setSavingSlideshow(true);
+    let musicPath: string | null = null;
+    let musicName: string | null = null;
+    if (slideshowMusicFile) {
+      const path = `${session.user.email}/${crypto.randomUUID()}-${slideshowMusicFile.name}`;
+      const { error: uploadError } = await supabase.storage.from('slideshow_music').upload(path, slideshowMusicFile);
+      if (!uploadError) {
+        musicPath = path;
+        musicName = slideshowMusicFile.name;
+      }
+    }
+    const { error } = await supabase.from('slideshows').insert({
+      owner_email: session.user.email,
+      name,
+      photo_ids: slideshowPhotos.map((p) => p.id),
+      use_video_sound: slideshowUseVideoSound,
+      music_path: musicPath,
+      music_name: musicName,
+    });
+    setSavingSlideshow(false);
+    if (!error) {
+      setShowSaveSlideshowForm(false);
+      setSaveSlideshowName('');
+      loadSlideshows();
+    }
+  }
+
+  async function playSavedSlideshow(s: { photo_ids: string[]; use_video_sound: boolean; music_path: string | null; music_name: string | null }) {
+    const ordered = s.photo_ids.map((id) => photos.find((p) => p.id === id)).filter(Boolean) as PhotoRecord[];
+    if (ordered.length === 0) return;
+    setSlideshowUseVideoSound(s.use_video_sound);
+    if (s.music_path) {
+      const { data } = await supabase.storage.from('slideshow_music').createSignedUrl(s.music_path, 3600);
+      if (data) {
+        setSlideshowMusicUrl(data.signedUrl);
+        setSlideshowMusicName(s.music_name || 'Saved music');
+        setSlideshowMusicFile(null); // it's already saved — no need to re-upload
+      }
+    }
+    startSlideshow(ordered);
+  }
+
+  async function deleteSavedSlideshow(s: { id: string; music_path: string | null }) {
+    const ok = window.confirm('Delete this saved slideshow? This only removes the saved setup, not the photos themselves.');
+    if (!ok) return;
+    if (s.music_path) {
+      await supabase.storage.from('slideshow_music').remove([s.music_path]);
+    }
+    await supabase.from('slideshows').delete().eq('id', s.id);
+    setSavedSlideshows((prev) => prev.filter((x) => x.id !== s.id));
+  }
+
+  async function shareSavedSlideshowInMessages(
+    s: { name: string; photo_ids: string[]; use_video_sound: boolean; music_path: string | null; music_name: string | null },
+    target: string
+  ) {
+    if (!target) return;
+    const [targetType, targetValue] = target.split(':');
+    const row: any = {
+      sender_email: session.user.email,
+      body: `🎬 Shared slideshow: ${s.name} (${s.photo_ids.length} item${s.photo_ids.length === 1 ? '' : 's'})`,
+      shared_photo_ids: s.photo_ids,
+      shared_folder_name: s.name,
+      shared_music_path: s.music_path,
+      shared_music_name: s.music_name,
+      shared_use_video_sound: s.use_video_sound,
+    };
+    if (targetType === 'dm') row.recipient_email = targetValue;
+    else row.group_id = targetValue;
+    await supabase.from('messages').insert(row);
+  }
+
+  async function viewSharedSlideshowFromMessage(m: MessageRecord) {
+    if (!m.shared_photo_ids || m.shared_photo_ids.length === 0) return;
+    const ordered = m.shared_photo_ids.map((id) => photos.find((p) => p.id === id)).filter(Boolean) as PhotoRecord[];
+    if (ordered.length === 0) return;
+    setSlideshowUseVideoSound(m.shared_use_video_sound || false);
+    if (m.shared_music_path) {
+      const { data } = await supabase.storage.from('slideshow_music').createSignedUrl(m.shared_music_path, 3600);
+      if (data) {
+        setSlideshowMusicUrl(data.signedUrl);
+        setSlideshowMusicName(m.shared_music_name || 'Shared music');
+        setSlideshowMusicFile(null);
+      }
+    }
+    startSlideshow(ordered);
+  }
+
   function handlePhotoDragStart(e: React.DragEvent, photoId: string) {
     e.dataTransfer.setData('text/plain', photoId);
   }
@@ -1174,6 +1319,33 @@ export default function App() {
   function closeSlideshow() {
     setSlideshowPhotos(null);
     setSlideshowUrl('');
+    if (slideshowMusicUrl) URL.revokeObjectURL(slideshowMusicUrl);
+    setSlideshowMusicUrl('');
+    setSlideshowMusicName('');
+    setSlideshowMusicFile(null);
+    setSlideshowMusicDuration(null);
+    setSlideshowUseVideoSound(false);
+    setShowSaveSlideshowForm(false);
+    setSaveSlideshowName('');
+  }
+
+  function handleSlideshowMusicChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (slideshowMusicUrl) URL.revokeObjectURL(slideshowMusicUrl);
+    const url = URL.createObjectURL(file);
+    setSlideshowMusicUrl(url);
+    setSlideshowMusicName(file.name);
+    setSlideshowMusicFile(file);
+    setSlideshowMusicDuration(null); // filled in once the audio's metadata loads
+  }
+
+  function removeSlideshowMusic() {
+    if (slideshowMusicUrl) URL.revokeObjectURL(slideshowMusicUrl);
+    setSlideshowMusicUrl('');
+    setSlideshowMusicName('');
+    setSlideshowMusicFile(null);
+    setSlideshowMusicDuration(null);
   }
 
   function slideshowNext() {
@@ -1204,14 +1376,29 @@ export default function App() {
     })();
   }, [slideshowPhotos, slideshowIndex]);
 
+  // How long each photo should stay on screen. If music is playing, spread the
+  // photos out so the slideshow roughly finishes when the song does — videos keep
+  // their own real length, so we estimate a typical video length when doing this math
+  // since we can't know exact lengths in advance without preloading every clip.
+  const slideshowPhotoDurationMs = useMemo(() => {
+    if (!slideshowPhotos || !slideshowMusicDuration) return 4000;
+    const photoCount = slideshowPhotos.filter((p) => p.media_type !== 'video').length;
+    const videoCount = slideshowPhotos.length - photoCount;
+    if (photoCount === 0) return 4000;
+    const assumedSecondsPerVideo = 8;
+    const remainingSeconds = Math.max(slideshowMusicDuration - videoCount * assumedSecondsPerVideo, photoCount * 2);
+    const perPhoto = remainingSeconds / photoCount;
+    return Math.min(Math.max(perPhoto, 2), 15) * 1000;
+  }, [slideshowPhotos, slideshowMusicDuration]);
+
   // Auto-advance timer — only for photos. Videos advance on their own "ended" event instead.
   useEffect(() => {
     if (!slideshowPhotos || !slideshowPlaying) return;
     const current = slideshowPhotos[slideshowIndex];
     if (!current || current.media_type === 'video') return;
-    const timer = setTimeout(() => slideshowNext(), 4000);
+    const timer = setTimeout(() => slideshowNext(), slideshowPhotoDurationMs);
     return () => clearTimeout(timer);
-  }, [slideshowPhotos, slideshowIndex, slideshowPlaying]);
+  }, [slideshowPhotos, slideshowIndex, slideshowPlaying, slideshowPhotoDurationMs]);
 
   // Keep the video itself in sync with the Play/Pause button.
   useEffect(() => {
@@ -1222,6 +1409,21 @@ export default function App() {
       slideshowVideoRef.current.pause();
     }
   }, [slideshowPlaying, slideshowUrl]);
+
+  // Keep the music in sync too — pausing it while a video plays if the video's
+  // own sound was chosen instead, and matching the overall Play/Pause button otherwise.
+  useEffect(() => {
+    if (!slideshowMusicRef.current || !slideshowMusicUrl || !slideshowPhotos) return;
+    const currentIsVideo = slideshowPhotos[slideshowIndex]?.media_type === 'video';
+    const audio = slideshowMusicRef.current;
+    if (slideshowUseVideoSound && currentIsVideo) {
+      audio.pause();
+    } else if (slideshowPlaying) {
+      audio.play().catch(() => {});
+    } else {
+      audio.pause();
+    }
+  }, [slideshowPlaying, slideshowIndex, slideshowMusicUrl, slideshowUseVideoSound, slideshowPhotos]);
 
   async function downloadOriginal(p: PhotoRecord) {
     const url = await getSignedUrl('originals', p.original_path);
@@ -1577,6 +1779,15 @@ export default function App() {
                         ) : (
                           <>
                             <div className="msg-body">{m.body}</div>
+                            {m.shared_photo_ids && m.shared_photo_ids.length > 0 && (
+                              <button
+                                className="btn-upload shared-folder-view-btn"
+                                onClick={() => viewSharedSlideshowFromMessage(m)}
+                              >
+                                ▶️ View {m.shared_folder_name || 'shared photos'}
+                                {m.shared_music_path ? ' 🎵' : ''}
+                              </button>
+                            )}
                             <div className="msg-time">
                               {new Date(m.created_at).toLocaleString()}
                               {m.sender_email === session.user.email && (
@@ -1618,6 +1829,55 @@ export default function App() {
             This shows only what <strong>you've</strong> uploaded, so you can organize your own shots into folders.
             To browse everyone's photos, use the main gallery below instead.
           </p>
+
+          {savedSlideshows.length > 0 && (
+            <>
+              <div className="thread-list-heading">🎬 Saved slideshows</div>
+              <div className="saved-slideshows-list">
+                {savedSlideshows.map((s) => (
+                  <div key={s.id} className="saved-slideshow-row">
+                    <span className="saved-slideshow-name">
+                      {s.name} ({s.photo_ids.length}){s.music_path ? ' 🎵' : ''}
+                    </span>
+                    <button className="linklike" onClick={() => playSavedSlideshow(s)}>▶️ Play</button>
+                    <button
+                      className="linklike"
+                      onClick={() => { setShareSlideshowId(shareSlideshowId === s.id ? null : s.id); setShareSlideshowSentId(null); }}
+                    >
+                      📤 Share
+                    </button>
+                    <button className="linklike" onClick={() => deleteSavedSlideshow(s)}>Delete</button>
+                    {shareSlideshowId === s.id && (
+                      <div className="share-folder-form">
+                        <select value={shareSlideshowTarget} onChange={(e) => setShareSlideshowTarget(e.target.value)}>
+                          <option value="">Send to…</option>
+                          {directory.map((d) => (
+                            <option key={d.email} value={`dm:${d.email}`}>{d.name}</option>
+                          ))}
+                          {groups.map((g) => (
+                            <option key={g.id} value={`group:${g.id}`}>{g.name} (group)</option>
+                          ))}
+                        </select>
+                        <button
+                          className="btn-upload"
+                          disabled={!shareSlideshowTarget}
+                          onClick={async () => {
+                            await shareSavedSlideshowInMessages(s, shareSlideshowTarget);
+                            setShareSlideshowSentId(s.id);
+                            setShareSlideshowId(null);
+                            setShareSlideshowTarget('');
+                          }}
+                        >
+                          Send
+                        </button>
+                      </div>
+                    )}
+                    {shareSlideshowSentId === s.id && <div className="photo-desc">Sent!</div>}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
 
           <div className="thread-list-heading">Folders — drag any photo below onto one</div>
           <div className="folder-row">
@@ -1664,15 +1924,47 @@ export default function App() {
                 ? `In "${folders.find((f) => f.id === activeFolderId)?.name}"`
                 : 'My uploads'}
             </span>
-            {(() => {
-              const currentList = activeFolderId
-                ? photos.filter((p) => folderPhotoIds.includes(p.id))
-                : photos.filter((p) => p.uploader_email === session.user.email);
-              return currentList.length > 0 ? (
-                <button className="linklike" onClick={() => startSlideshow(currentList)}>▶️ Play slideshow</button>
-              ) : null;
-            })()}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              {activeFolderId && folderPhotoIds.length > 0 && (
+                <button className="linklike" onClick={() => { setShowShareFolderForm((v) => !v); setShareFolderSent(false); }}>
+                  📤 Share this folder
+                </button>
+              )}
+              {(() => {
+                const currentList = activeFolderId
+                  ? photos.filter((p) => folderPhotoIds.includes(p.id))
+                  : photos.filter((p) => p.uploader_email === session.user.email);
+                return currentList.length > 0 ? (
+                  <button className="linklike" onClick={() => startSlideshow(currentList)}>▶️ Play slideshow</button>
+                ) : null;
+              })()}
+            </div>
           </div>
+
+          {activeFolderId && showShareFolderForm && (
+            <div className="share-folder-form">
+              <select value={shareFolderTarget} onChange={(e) => setShareFolderTarget(e.target.value)}>
+                <option value="">Send to…</option>
+                {directory.map((d) => (
+                  <option key={d.email} value={`dm:${d.email}`}>{d.name}</option>
+                ))}
+                {groups.map((g) => (
+                  <option key={g.id} value={`group:${g.id}`}>{g.name} (group)</option>
+                ))}
+              </select>
+              <button
+                className="btn-upload"
+                disabled={!shareFolderTarget}
+                onClick={() => {
+                  const folder = folders.find((f) => f.id === activeFolderId);
+                  if (folder) shareFolderInMessages(folder.id, folder.name, shareFolderTarget);
+                }}
+              >
+                Send
+              </button>
+            </div>
+          )}
+          {shareFolderSent && <div className="photo-desc">Sent! They'll see it in Messages.</div>}
           <div className="myphotos-grid">
             {(activeFolderId
               ? photos.filter((p) => folderPhotoIds.includes(p.id))
@@ -2213,6 +2505,7 @@ export default function App() {
                   src={slideshowUrl}
                   controls
                   autoPlay={slideshowPlaying}
+                  muted={!!slideshowMusicUrl && !slideshowUseVideoSound}
                   onEnded={() => { if (slideshowPlaying) slideshowNext(); }}
                   style={{ maxWidth: '100%', maxHeight: '78vh' }}
                 />
@@ -2235,6 +2528,61 @@ export default function App() {
             <button onClick={slideshowNext}>⏭ Next</button>
             <span className="slideshow-counter">{slideshowIndex + 1} / {slideshowPhotos.length}</span>
           </div>
+
+          <div className="slideshow-music-bar">
+            <input
+              type="file"
+              accept="audio/*"
+              ref={slideshowMusicInputRef}
+              onChange={handleSlideshowMusicChange}
+              style={{ display: 'none' }}
+            />
+            {slideshowMusicUrl ? (
+              <>
+                <span>🎵 {slideshowMusicName}</span>
+                <button className="linklike" onClick={removeSlideshowMusic}>Remove music</button>
+                <label className="slideshow-video-sound-toggle">
+                  <input
+                    type="checkbox"
+                    checked={slideshowUseVideoSound}
+                    onChange={(e) => setSlideshowUseVideoSound(e.target.checked)}
+                  />
+                  Use each video's own sound (instead of the music)
+                </label>
+              </>
+            ) : (
+              <button className="linklike" onClick={() => slideshowMusicInputRef.current?.click()}>
+                🎵 Add background music
+              </button>
+            )}
+            {!showSaveSlideshowForm ? (
+              <button className="linklike" onClick={() => setShowSaveSlideshowForm(true)}>
+                💾 Save this slideshow
+              </button>
+            ) : (
+              <span className="save-slideshow-inline">
+                <input
+                  placeholder="Name this slideshow"
+                  value={saveSlideshowName}
+                  onChange={(e) => setSaveSlideshowName(e.target.value)}
+                />
+                <button className="linklike" disabled={!saveSlideshowName.trim() || savingSlideshow} onClick={saveCurrentSlideshow}>
+                  {savingSlideshow ? 'Saving…' : 'Save'}
+                </button>
+                <button className="linklike" onClick={() => setShowSaveSlideshowForm(false)}>Cancel</button>
+              </span>
+            )}
+          </div>
+
+          {slideshowMusicUrl && (
+            <audio
+              ref={slideshowMusicRef}
+              src={slideshowMusicUrl}
+              loop
+              onLoadedMetadata={(e) => setSlideshowMusicDuration(e.currentTarget.duration)}
+              style={{ display: 'none' }}
+            />
+          )}
         </div>
       )}
     </div>
