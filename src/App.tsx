@@ -133,8 +133,14 @@ export default function App() {
   const [renamingFolderId, setRenamingFolderId] = useState<string | null>(null);
   const [renameFolderName, setRenameFolderName] = useState('');
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
-  const [myPhotosFilter, setMyPhotosFilter] = useState<'mine' | 'all'>('mine');
   const [addToFolderChoice, setAddToFolderChoice] = useState('');
+  const [showTakedownForm, setShowTakedownForm] = useState(false);
+  const [takedownReason, setTakedownReason] = useState('');
+  const [takedownSent, setTakedownSent] = useState(false);
+  const [takedownRequests, setTakedownRequests] = useState<
+    { id: string; photo_id: string; requested_by_email: string; reason: string | null; created_at: string }[]
+  >([]);
+  const [showTakedownPanel, setShowTakedownPanel] = useState(false);
 
   const [sectionOrder, setSectionOrder] = useState<string[]>(['upload', 'gallery', 'messages', 'myphotos']);
   const [showLayoutPanel, setShowLayoutPanel] = useState(false);
@@ -219,8 +225,19 @@ export default function App() {
   useEffect(() => {
     if (isAdmin) {
       loadPendingRequests();
+      loadTakedownRequests();
     }
   }, [isAdmin]);
+
+  async function loadTakedownRequests() {
+    const { data, error } = await supabase
+      .from('photo_takedown_requests')
+      .select('*')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true });
+    if (error || !data) return;
+    setTakedownRequests(data as any[]);
+  }
 
   async function loadCategories() {
     const { data, error } = await supabase.from('categories').select('*').order('name');
@@ -914,6 +931,43 @@ export default function App() {
     }
   }
 
+  async function submitTakedownRequest(photo: PhotoRecord) {
+    const { error } = await supabase.from('photo_takedown_requests').insert({
+      photo_id: photo.id,
+      requested_by_email: session.user.email,
+      reason: takedownReason.trim() || null,
+    });
+    if (!error) {
+      setTakedownSent(true);
+      setShowTakedownForm(false);
+      setTakedownReason('');
+    }
+  }
+
+  async function approveTakedown(req: { id: string; photo_id: string }) {
+    const photo = photos.find((p) => p.id === req.photo_id);
+    if (!photo) {
+      // Photo is already gone somehow — just clear the request.
+      await supabase.from('photo_takedown_requests').delete().eq('id', req.id);
+      loadTakedownRequests();
+      return;
+    }
+    const ok = window.confirm(`Delete this photo from ${photo.uploader_name}? This can't be undone.`);
+    if (!ok) return;
+    await supabase.storage.from('originals').remove([photo.original_path]);
+    if (photo.preview_path) {
+      await supabase.storage.from('previews').remove([photo.preview_path]);
+    }
+    await supabase.from('photos').delete().eq('id', photo.id);
+    setPhotos((prev) => prev.filter((x) => x.id !== photo.id));
+    loadTakedownRequests();
+  }
+
+  async function dismissTakedown(req: { id: string }) {
+    await supabase.from('photo_takedown_requests').update({ status: 'dismissed' }).eq('id', req.id);
+    setTakedownRequests((prev) => prev.filter((r) => r.id !== req.id));
+  }
+
   async function getSignedUrl(bucket: 'originals' | 'previews', path: string) {
     const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 300);
     if (error) {
@@ -1067,6 +1121,9 @@ export default function App() {
     setLightbox(p);
     setPhotoComments([]);
     setNewCommentBody('');
+    setShowTakedownForm(false);
+    setTakedownReason('');
+    setTakedownSent(false);
     const isHeic = /\.(heic|heif)$/i.test(p.original_path);
     // Most browsers (everything but Safari) can't display HEIC inline, so for viewing
     // we show the already-converted preview instead. "Download high-res" still gets
@@ -1348,6 +1405,9 @@ export default function App() {
                 <button className={'nav-pill' + (showRequestsPanel ? ' active' : '')} onClick={() => setShowRequestsPanel((v) => !v)}>
                   📨 {showRequestsPanel ? 'Hide requests' : `Access requests${pendingRequests.length ? ` (${pendingRequests.length})` : ''}`}
                 </button>
+                <button className={'nav-pill' + (showTakedownPanel ? ' active' : '')} onClick={() => setShowTakedownPanel((v) => !v)}>
+                  🚩 {showTakedownPanel ? 'Hide takedown requests' : `Takedown requests${takedownRequests.length ? ` (${takedownRequests.length})` : ''}`}
+                </button>
                 <button className={'nav-pill' + (showLayoutPanel ? ' active' : '')} onClick={() => setShowLayoutPanel((v) => !v)}>
                   ⚙️ {showLayoutPanel ? 'Hide layout settings' : 'Layout settings'}
                 </button>
@@ -1554,21 +1614,10 @@ export default function App() {
       {showMyPhotosPanel && (
         <div ref={myPhotosPanelRef} className="admin-panel myphotos-panel" style={{ order: sectionOrder.indexOf('myphotos') }}>
           <h3>My Photos</h3>
-
-          <div className="myphotos-toolbar">
-            <button
-              className={'thread-item' + (myPhotosFilter === 'mine' ? ' active' : '')}
-              onClick={() => { setMyPhotosFilter('mine'); setActiveFolderId(null); }}
-            >
-              My uploads
-            </button>
-            <button
-              className={'thread-item' + (myPhotosFilter === 'all' && !activeFolderId ? ' active' : '')}
-              onClick={() => { setMyPhotosFilter('all'); setActiveFolderId(null); }}
-            >
-              Everything shared with me
-            </button>
-          </div>
+          <p className="photo-desc myphotos-explainer">
+            This shows only what <strong>you've</strong> uploaded, so you can organize your own shots into folders.
+            To browse everyone's photos, use the main gallery below instead.
+          </p>
 
           <div className="thread-list-heading">Folders — drag any photo below onto one</div>
           <div className="folder-row">
@@ -1613,16 +1662,12 @@ export default function App() {
             <span>
               {activeFolderId
                 ? `In "${folders.find((f) => f.id === activeFolderId)?.name}"`
-                : myPhotosFilter === 'mine'
-                ? 'My uploads'
-                : 'Everything shared with me'}
+                : 'My uploads'}
             </span>
             {(() => {
               const currentList = activeFolderId
                 ? photos.filter((p) => folderPhotoIds.includes(p.id))
-                : myPhotosFilter === 'mine'
-                ? photos.filter((p) => p.uploader_email === session.user.email)
-                : photos;
+                : photos.filter((p) => p.uploader_email === session.user.email);
               return currentList.length > 0 ? (
                 <button className="linklike" onClick={() => startSlideshow(currentList)}>▶️ Play slideshow</button>
               ) : null;
@@ -1631,9 +1676,7 @@ export default function App() {
           <div className="myphotos-grid">
             {(activeFolderId
               ? photos.filter((p) => folderPhotoIds.includes(p.id))
-              : myPhotosFilter === 'mine'
-              ? photos.filter((p) => p.uploader_email === session.user.email)
-              : photos
+              : photos.filter((p) => p.uploader_email === session.user.email)
             ).map((p) => (
               <div
                 key={p.id}
@@ -1655,6 +1698,9 @@ export default function App() {
             ))}
             {activeFolderId && folderPhotoIds.length === 0 && (
               <div className="photo-desc">Nothing in this folder yet — drag a photo onto it above.</div>
+            )}
+            {!activeFolderId && photos.filter((p) => p.uploader_email === session.user.email).length === 0 && (
+              <div className="photo-desc">You haven't uploaded anything yet — use the upload box below to add your first photo or video.</div>
             )}
           </div>
         </div>
@@ -1772,6 +1818,35 @@ export default function App() {
               </div>
             ))}
             {pendingRequests.length === 0 && <div className="photo-desc">No pending requests.</div>}
+          </div>
+        </div>
+      )}
+
+      {isAdmin && showTakedownPanel && (
+        <div className="admin-panel" style={{ order: -10 }}>
+          <h3>Takedown requests</h3>
+          <p className="photo-desc">Guests can flag a photo they'd like removed. Nothing is deleted until you approve it here.</p>
+          <div className="guest-rows takedown-list">
+            {takedownRequests.map((r) => {
+              const photo = photos.find((p) => p.id === r.photo_id);
+              return (
+                <div className="takedown-request-row" key={r.id}>
+                  {photo && previewUrls[photo.id] && (
+                    <img className="takedown-thumb" src={previewUrls[photo.id]} alt="" />
+                  )}
+                  <div className="takedown-info">
+                    <div><strong>Requested by:</strong> {nameFor(r.requested_by_email)}</div>
+                    {photo && <div><strong>Uploaded by:</strong> {photo.uploader_name}</div>}
+                    {r.reason && <div><strong>Reason:</strong> {r.reason}</div>}
+                  </div>
+                  <div className="takedown-actions">
+                    <button className="remove-btn" onClick={() => approveTakedown(r)}>Delete photo</button>
+                    <button className="toggle-btn" onClick={() => dismissTakedown(r)}>Dismiss</button>
+                  </div>
+                </div>
+              );
+            })}
+            {takedownRequests.length === 0 && <div className="photo-desc">No pending takedown requests.</div>}
           </div>
         </div>
       )}
@@ -2041,6 +2116,28 @@ export default function App() {
               {canEditOrDelete(lightbox) && <button className="delete-photo-btn" onClick={() => deletePhoto(lightbox)}>Delete</button>}
               <button className="close-btn" onClick={() => { setLightbox(null); setLightboxUrl(''); }}>Close</button>
             </div>
+
+            {!canEditOrDelete(lightbox) && (
+              <div className="takedown-row">
+                {takedownSent ? (
+                  <div className="photo-desc">Request sent — an admin will take a look.</div>
+                ) : showTakedownForm ? (
+                  <div className="msg-edit-row">
+                    <input
+                      placeholder="Optional: why should this come down?"
+                      value={takedownReason}
+                      onChange={(e) => setTakedownReason(e.target.value)}
+                    />
+                    <button className="linklike" onClick={() => submitTakedownRequest(lightbox)}>Send request</button>
+                    <button className="linklike" onClick={() => setShowTakedownForm(false)}>Cancel</button>
+                  </div>
+                ) : (
+                  <button className="linklike" onClick={() => setShowTakedownForm(true)}>
+                    🚩 Request this be taken down
+                  </button>
+                )}
+              </div>
+            )}
 
             {folders.length > 0 && (
               <div className="add-to-folder-row">
