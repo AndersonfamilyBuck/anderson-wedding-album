@@ -187,6 +187,9 @@ export default function App() {
   const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
   const [addToFolderChoice, setAddToFolderChoice] = useState('');
   const [showTakedownForm, setShowTakedownForm] = useState(false);
+  const [activeShowcaseCommentId, setActiveShowcaseCommentId] = useState<string | null>(null);
+  const [showcaseComments, setShowcaseComments] = useState<MessageRecord[]>([]);
+  const [newShowcaseComment, setNewShowcaseComment] = useState('');
   const [takedownReason, setTakedownReason] = useState('');
   const [takedownSent, setTakedownSent] = useState(false);
   const [takedownRequests, setTakedownRequests] = useState<
@@ -197,7 +200,7 @@ export default function App() {
   const [shareFolderTarget, setShareFolderTarget] = useState('');
   const [shareFolderSent, setShareFolderSent] = useState(false);
 
-  const [sectionOrder, setSectionOrder] = useState<string[]>(['upload', 'gallery', 'messages', 'myphotos']);
+  const [sectionOrder, setSectionOrder] = useState<string[]>(['showcase', 'upload', 'gallery', 'messages', 'myphotos']);
   const [showLayoutPanel, setShowLayoutPanel] = useState(false);
   const [showAdminToolsRow, setShowAdminToolsRow] = useState(false);
   const [showHelpPanel, setShowHelpPanel] = useState(false);
@@ -609,6 +612,38 @@ export default function App() {
     }
   }
 
+  async function toggleShowcaseComments(photoId: string) {
+    if (activeShowcaseCommentId === photoId) {
+      setActiveShowcaseCommentId(null);
+      return;
+    }
+    setActiveShowcaseCommentId(photoId);
+    setNewShowcaseComment('');
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('photo_id', photoId)
+      .order('created_at', { ascending: true });
+    if (!error && data) setShowcaseComments(data as MessageRecord[]);
+  }
+
+  async function sendShowcaseComment(photoId: string) {
+    const body = newShowcaseComment.trim();
+    if (!body) return;
+    const { error } = await supabase
+      .from('messages')
+      .insert({ sender_email: session.user.email, photo_id: photoId, body });
+    if (!error) {
+      setNewShowcaseComment('');
+      const { data } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('photo_id', photoId)
+        .order('created_at', { ascending: true });
+      if (data) setShowcaseComments(data as MessageRecord[]);
+    }
+  }
+
   function startEditMessage(m: MessageRecord) {
     setEditingMessageId(m.id);
     setEditMessageBody(m.body);
@@ -933,8 +968,13 @@ export default function App() {
   async function loadSiteSettings() {
     const { data, error } = await supabase.from('site_settings').select('*').eq('id', 1).maybeSingle();
     if (error || !data) return;
-    if (Array.isArray(data.section_order) && data.section_order.length === 4) {
-      setSectionOrder(data.section_order);
+    if (Array.isArray(data.section_order)) {
+      if (data.section_order.length === 5) {
+        setSectionOrder(data.section_order);
+      } else if (data.section_order.length === 4 && !data.section_order.includes('showcase')) {
+        // Settings saved before the Showcase feed existed — add it at the front by default.
+        setSectionOrder(['showcase', ...data.section_order]);
+      }
     }
     if (data.default_sort) {
       setSortOrder(data.default_sort as any);
@@ -976,6 +1016,7 @@ export default function App() {
   }
 
   const sectionLabels: Record<string, string> = {
+    showcase: 'Showcase feed',
     upload: 'Upload box',
     gallery: 'Gallery & filters',
     messages: 'Messages panel',
@@ -1511,6 +1552,12 @@ export default function App() {
   const uploaderNames = useMemo(() => {
     const set = new Set(photos.map((p) => p.uploader_name));
     return Array.from(set).sort();
+  }, [photos]);
+
+  const showcasePhotos = useMemo(() => {
+    return [...photos]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 12);
   }, [photos]);
 
   const filteredPhotos = useMemo(() => {
@@ -2293,6 +2340,53 @@ export default function App() {
 
       {!notAllowed && (
         <>
+          {showcasePhotos.length > 0 && (
+            <div className="showcase-feed" style={{ order: sectionOrder.indexOf('showcase') }}>
+              <h3 className="showcase-title">📰 Recent posts</h3>
+              {showcasePhotos.map((p) => (
+                <div className="showcase-card" key={p.id}>
+                  <div className="showcase-header">
+                    <span className="showcase-posted-by">📸 Posted by {p.uploader_name}</span>
+                    <span className="showcase-date">{new Date(p.created_at).toLocaleString()}</span>
+                  </div>
+                  <div className="showcase-media" onClick={() => openLightbox(p)}>
+                    {previewUrls[p.id] ? (
+                      <img src={previewUrls[p.id]} alt={p.description || 'wedding photo'} />
+                    ) : (
+                      <div className="thumb-placeholder" />
+                    )}
+                    {p.media_type === 'video' && <div className="play-badge">▶</div>}
+                  </div>
+                  {p.description && <div className="showcase-caption">{p.description}</div>}
+                  <button className="linklike" onClick={() => toggleShowcaseComments(p.id)}>
+                    💬 {activeShowcaseCommentId === p.id ? 'Hide comments' : 'Comment'}
+                  </button>
+                  {activeShowcaseCommentId === p.id && (
+                    <div className="showcase-comments">
+                      {showcaseComments.map((c) => (
+                        <div key={c.id} className="comment-item">
+                          <span className="comment-sender">{nameFor(c.sender_email)}:</span> {c.body}
+                        </div>
+                      ))}
+                      {showcaseComments.length === 0 && <div className="photo-desc">No comments yet.</div>}
+                      <form
+                        className="comment-form"
+                        onSubmit={(e) => { e.preventDefault(); sendShowcaseComment(p.id); }}
+                      >
+                        <input
+                          placeholder="Add a comment…"
+                          value={newShowcaseComment}
+                          onChange={(e) => setNewShowcaseComment(e.target.value)}
+                        />
+                        <button className="btn-upload" type="submit">Post</button>
+                      </form>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="upload-zone" style={{ order: sectionOrder.indexOf('upload') }}>
             <div
               className={`upload-box${isDragOver ? ' dragover' : ''}`}
