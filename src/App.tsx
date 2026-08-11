@@ -1016,15 +1016,21 @@ export default function App() {
     const nextOrder = existing.length > 0 ? Math.max(...existing.map((s) => s.step_order)) + 1 : 1;
     const path = `slides/${key}/${crypto.randomUUID()}-${file.name}`;
     const { error: uploadError } = await supabase.storage.from('tutorial_videos').upload(path, file);
-    if (!uploadError) {
-      await supabase.from('tutorial_slides').insert({
-        feature_key: key,
-        step_order: nextOrder,
-        image_path: path,
-        caption,
-      });
-      loadTutorialSlides();
+    if (uploadError) {
+      window.alert(`Couldn't upload the screenshot: ${uploadError.message}`);
+      return;
     }
+    const { error: insertError } = await supabase.from('tutorial_slides').insert({
+      feature_key: key,
+      step_order: nextOrder,
+      image_path: path,
+      caption,
+    });
+    if (insertError) {
+      window.alert(`Screenshot uploaded, but saving it failed: ${insertError.message}`);
+      return;
+    }
+    loadTutorialSlides();
   }
 
   async function deleteTutorialSlide(slideId: string, imagePath: string) {
@@ -1050,15 +1056,19 @@ export default function App() {
     const path = `${key}/${crypto.randomUUID()}-${file.name}`;
     const existing = tutorialVideos[key];
     const { error: uploadError } = await supabase.storage.from('tutorial_videos').upload(path, file);
-    if (!uploadError) {
-      if (existing) {
-        await supabase.from('tutorial_videos').update({ title: label, video_path: path }).eq('id', existing.id);
-        await supabase.storage.from('tutorial_videos').remove([existing.video_path]);
-      } else {
-        await supabase.from('tutorial_videos').insert({ feature_key: key, title: label, video_path: path });
-      }
-      loadTutorialVideos();
+    if (uploadError) {
+      window.alert(`Couldn't upload the video: ${uploadError.message}`);
+      setUploadingTutorialKey(null);
+      return;
     }
+    if (existing) {
+      await supabase.from('tutorial_videos').update({ title: label, video_path: path }).eq('id', existing.id);
+      await supabase.storage.from('tutorial_videos').remove([existing.video_path]);
+    } else {
+      const { error: insertError } = await supabase.from('tutorial_videos').insert({ feature_key: key, title: label, video_path: path });
+      if (insertError) window.alert(`Video uploaded, but saving it failed: ${insertError.message}`);
+    }
+    loadTutorialVideos();
     setUploadingTutorialKey(null);
   }
 
@@ -2491,13 +2501,13 @@ export default function App() {
             accept="image/*"
             ref={tutorialSlideFileInputRef}
             style={{ display: 'none' }}
-            onChange={(e) => {
+            onChange={async (e) => {
               const file = e.target.files?.[0];
               if (file && guidedKey) {
-                addTutorialSlide(guidedKey, file, guidedCaption.trim() || 'Step');
+                await addTutorialSlide(guidedKey, file, guidedCaption.trim() || 'Step');
                 advanceGuidedSetup();
               } else if (file && addingSlideForKey) {
-                addTutorialSlide(addingSlideForKey, file, newSlideCaption.trim() || 'Step');
+                await addTutorialSlide(addingSlideForKey, file, newSlideCaption.trim() || 'Step');
                 setNewSlideCaption('');
                 setAddingSlideForKey(null);
               }
