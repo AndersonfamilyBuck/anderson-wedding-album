@@ -45,7 +45,7 @@ const CONFIG = {
   COUPLE: 'The Newlyweds',
   DATE: 'August 8, 2026',
   SITE_URL: 'https://anderson-wedding-album.vercel.app',
-  INVITE_WEBHOOK_URL: '', // paste your Zapier "Catch Hook" URL here once created
+  INVITE_WEBHOOK_URL: 'https://hooks.zapier.com/hooks/catch/28502842/46nx4f3/',
 };
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
