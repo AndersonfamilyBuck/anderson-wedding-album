@@ -286,6 +286,22 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
 .reorder-row{ gap:10px; }
 .reorder-thumb{ width:44px; height:44px; object-fit:cover; border-radius:3px; flex-shrink:0; }
 
+.reaction-bar{ display:flex; flex-wrap:wrap; gap:6px; align-items:center; padding:6px 10px 0; position:relative; }
+.reaction-bar.centered{ justify-content:center; padding:10px 0 0; }
+.reaction-pill{ background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.15); color:var(--ivory); padding:4px 9px; border-radius:14px; font-size:12px; }
+.reaction-pill.mine{ background:rgba(201,166,107,0.3); border-color:var(--gold); }
+.reaction-add-btn{ background:none; border:1px dashed rgba(201,166,107,0.5); color:var(--gold); padding:4px 9px; border-radius:14px; font-size:11px; }
+.reaction-picker{ position:absolute; top:100%; left:10px; z-index:5; display:flex; gap:4px; background:var(--plum-deep); border:1px solid rgba(201,166,107,0.4); border-radius:20px; padding:6px 8px; box-shadow:0 8px 20px rgba(0,0,0,0.4); }
+.reaction-picker button{ background:none; border:none; font-size:18px; padding:2px 4px; }
+
+.share-photo-menu{ margin:8px 10px 0; padding:10px; background:rgba(255,255,255,0.05); border:1px solid rgba(201,166,107,0.3); border-radius:6px; display:flex; flex-direction:column; gap:8px; }
+.outside-share-url input{ width:100%; padding:8px 10px; border-radius:3px; border:1px solid rgba(201,166,107,0.4); background:rgba(255,255,255,0.9); color:var(--ink); font-size:12px; margin-bottom:4px; }
+
+.shared-photo-page{ min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:24px; background:radial-gradient(ellipse at top, var(--plum-soft) 0%, var(--plum) 45%, var(--plum-deep) 100%); }
+.shared-photo-media{ max-width:100%; max-height:80vh; border-radius:6px; box-shadow:0 30px 60px -20px rgba(0,0,0,0.6); }
+.shared-photo-caption{ margin-top:18px; text-align:center; color:var(--ivory); max-width:600px; }
+.shared-photo-credit{ margin-top:6px; font-size:12px; color:rgba(243,236,228,0.6); font-family:'IBM Plex Mono', monospace; }
+
 /* ===== Desktop scale-up =====
    Everything above this point is unchanged and still applies on all
    screen sizes (including mobile). These rules ONLY kick in on wide
