@@ -51,8 +51,14 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '1.9';
+const CURRENT_VERSION = '2.0';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '2.0',
+    notes: [
+      'Reorder photos two new ways: drag a photo into place, or switch to "Click to number" and tap photos in the order you want',
+    ],
+  },
   {
     version: '1.9',
     notes: [
@@ -536,6 +542,67 @@ export default function App() {
     await supabase.from('photos').update({ sort_order: bOrder }).eq('id', a.id);
     await supabase.from('photos').update({ sort_order: aOrder }).eq('id', b.id);
     loadPhotos();
+  }
+
+  // Renumbers the given list 1..N and saves it in one go. Used by both
+  // drag-and-drop and "click to number" so the result is always exact,
+  // even if some photos never had a sort_order set before.
+  async function commitPhotoOrder(orderedList: PhotoRecord[]) {
+    const rows = orderedList.map((p, i) => ({ id: p.id, sort_order: i + 1 }));
+    await supabase.from('photos').upsert(rows, { onConflict: 'id' });
+    loadPhotos();
+  }
+
+  const [dragPhotoId, setDragPhotoId] = useState<string | null>(null);
+
+  function dropPhotoOnto(targetId: string) {
+    if (!dragPhotoId || dragPhotoId === targetId) {
+      setDragPhotoId(null);
+      return;
+    }
+    const list = [...photoOrderList];
+    const fromIdx = list.findIndex((p) => p.id === dragPhotoId);
+    const toIdx = list.findIndex((p) => p.id === targetId);
+    setDragPhotoId(null);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [moved] = list.splice(fromIdx, 1);
+    list.splice(toIdx, 0, moved);
+    commitPhotoOrder(list);
+  }
+
+  const [reorderMode, setReorderMode] = useState<'list' | 'click'>('list');
+  const [clickOrderMap, setClickOrderMap] = useState<Record<string, number>>({});
+  const clickCounterRef = useRef(0);
+
+  const clickedOrder = useMemo(
+    () => Object.entries(clickOrderMap).sort((a, b) => a[1] - b[1]).map(([id]) => id),
+    [clickOrderMap]
+  );
+
+  function handleClickNumber(photoId: string) {
+    setClickOrderMap((prev) => {
+      if (prev[photoId] != null) {
+        const next = { ...prev };
+        delete next[photoId];
+        return next;
+      }
+      clickCounterRef.current += 1;
+      return { ...prev, [photoId]: clickCounterRef.current };
+    });
+  }
+
+  function resetClickOrder() {
+    setClickOrderMap({});
+    clickCounterRef.current = 0;
+  }
+
+  function saveClickOrder() {
+    const clickedSet = new Set(clickedOrder);
+    const clickedPhotos = clickedOrder.map((id) => photoOrderList.find((p) => p.id === id)).filter(Boolean) as PhotoRecord[];
+    const remaining = photoOrderList.filter((p) => !clickedSet.has(p.id));
+    commitPhotoOrder([...clickedPhotos, ...remaining]);
+    resetClickOrder();
+    setReorderMode('list');
   }
 
   async function addCategory(e: React.FormEvent) {
@@ -2935,18 +3002,71 @@ export default function App() {
           <div className="photo-desc">
             Set one master order for every photo. This order is used by the gallery's "By category order" sort and by slideshows.
           </div>
-          <div className="guest-rows">
-            {photoOrderList.map((p, i) => (
-              <div className="guest-row reorder-row" key={p.id}>
-                {previewUrls[p.id] && <img className="reorder-thumb" src={previewUrls[p.id]} alt="" />}
-                <span className="guest-name">{p.uploader_name}</span>
-                <span className="guest-email">{p.description || p.category || ''}</span>
-                <button className="toggle-btn" disabled={i === 0} onClick={() => movePhotoOrder(p.id, 'up')}>↑</button>
-                <button className="toggle-btn" disabled={i === photoOrderList.length - 1} onClick={() => movePhotoOrder(p.id, 'down')}>↓</button>
-              </div>
-            ))}
-            {photoOrderList.length === 0 && <div className="photo-desc">No photos yet.</div>}
+          <div className="reorder-mode-toggle">
+            <button
+              className={'nav-pill' + (reorderMode === 'list' ? ' active' : '')}
+              onClick={() => { setReorderMode('list'); resetClickOrder(); }}
+            >
+              ↕ Drag or arrows
+            </button>
+            <button
+              className={'nav-pill' + (reorderMode === 'click' ? ' active' : '')}
+              onClick={() => setReorderMode('click')}
+            >
+              🔢 Click to number
+            </button>
           </div>
+
+          {reorderMode === 'list' ? (
+            <div className="guest-rows">
+              {photoOrderList.map((p, i) => (
+                <div
+                  className={'guest-row reorder-row' + (dragPhotoId === p.id ? ' dragging' : '')}
+                  key={p.id}
+                  draggable
+                  onDragStart={() => setDragPhotoId(p.id)}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={() => dropPhotoOnto(p.id)}
+                  onDragEnd={() => setDragPhotoId(null)}
+                >
+                  <span className="drag-handle">⠿</span>
+                  {previewUrls[p.id] && <img className="reorder-thumb" src={previewUrls[p.id]} alt="" />}
+                  <span className="guest-name">{p.uploader_name}</span>
+                  <span className="guest-email">{p.description || p.category || ''}</span>
+                  <button className="toggle-btn" disabled={i === 0} onClick={() => movePhotoOrder(p.id, 'up')}>↑</button>
+                  <button className="toggle-btn" disabled={i === photoOrderList.length - 1} onClick={() => movePhotoOrder(p.id, 'down')}>↓</button>
+                </div>
+              ))}
+              {photoOrderList.length === 0 && <div className="photo-desc">No photos yet.</div>}
+            </div>
+          ) : (
+            <>
+              <div className="photo-desc">
+                Tap photos in the order you want them to come first. Tap a numbered photo again to un-tap it. Anything you don't tap keeps its current place, after the ones you numbered.
+              </div>
+              <div className="reorder-click-grid">
+                {photoOrderList.map((p) => {
+                  const num = clickedOrder.indexOf(p.id) + 1;
+                  const isClicked = num > 0;
+                  return (
+                    <div
+                      key={p.id}
+                      className={'reorder-click-thumb' + (isClicked ? ' clicked' : '')}
+                      onClick={() => handleClickNumber(p.id)}
+                    >
+                      {previewUrls[p.id] && <img src={previewUrls[p.id]} alt="" />}
+                      {isClicked && <span className="reorder-click-badge">{num}</span>}
+                    </div>
+                  );
+                })}
+                {photoOrderList.length === 0 && <div className="photo-desc">No photos yet.</div>}
+              </div>
+              <div className="reorder-click-actions">
+                <button className="toggle-btn" onClick={resetClickOrder} disabled={clickedOrder.length === 0}>Reset numbers</button>
+                <button className="btn-upload" onClick={saveClickOrder} disabled={clickedOrder.length === 0}>Save order</button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
