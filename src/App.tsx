@@ -2668,7 +2668,7 @@ export default function App() {
                         ? 'Sending…'
                         : inviteStatusByEmail[g.email] === 'sent'
                         ? 'Sent!'
-                        : 'Invite'}
+                        : 'Resend invite'}
                     </button>
                     <button className="toggle-btn" onClick={() => toggleGuestAdmin(g.email, g.is_admin)}>
                       {g.is_admin ? 'Remove admin' : 'Make admin'}
