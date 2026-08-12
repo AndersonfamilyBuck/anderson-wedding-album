@@ -56,7 +56,7 @@ const CHANGELOG: { version: string; notes: string[] }[] = [
   {
     version: '1.9',
     notes: [
-      'React to any photo with ❤️ 😂 😍 🎉 👏',
+      'React to any photo with ❤️ 😂 😍 🎉 👏 — in the gallery, the full-size view, or the Recent posts feed',
       'Share a photo to a person or group in Messages',
       'Or get an outside link for a single photo — anyone with the link sees just that photo, nothing else on the site',
     ],
@@ -3039,6 +3039,34 @@ export default function App() {
                     {p.media_type === 'video' && <div className="play-badge">▶</div>}
                   </div>
                   {p.description && <div className="showcase-caption">{p.description}</div>}
+                  <div className="reaction-bar">
+                    {REACTION_EMOJIS.map((emoji) => {
+                      const count = reactionsByPhoto[p.id]?.counts[emoji] || 0;
+                      if (count === 0) return null;
+                      return (
+                        <button
+                          key={emoji}
+                          className={'reaction-pill' + (reactionsByPhoto[p.id]?.mine === emoji ? ' mine' : '')}
+                          onClick={() => toggleReaction(p.id, emoji)}
+                        >
+                          {emoji} {count}
+                        </button>
+                      );
+                    })}
+                    <button
+                      className="reaction-add-btn"
+                      onClick={() => setOpenReactionPickerId(openReactionPickerId === p.id ? null : p.id)}
+                    >
+                      {reactionsByPhoto[p.id]?.mine ? '···' : '+ React'}
+                    </button>
+                    {openReactionPickerId === p.id && (
+                      <div className="reaction-picker">
+                        {REACTION_EMOJIS.map((emoji) => (
+                          <button key={emoji} onClick={() => toggleReaction(p.id, emoji)}>{emoji}</button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <button className="linklike" onClick={() => toggleShowcaseComments(p.id)}>
                     💬 {activeShowcaseCommentId === p.id ? 'Hide comments' : 'Comment'}
                   </button>
