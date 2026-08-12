@@ -51,8 +51,16 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '1.8';
+const CURRENT_VERSION = '1.9';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '1.9',
+    notes: [
+      'React to any photo with ❤️ 😂 😍 🎉 👏',
+      'Share a photo to a person or group in Messages',
+      'Or get an outside link for a single photo — anyone with the link sees just that photo, nothing else on the site',
+    ],
+  },
   {
     version: '1.8',
     notes: [
@@ -227,6 +235,16 @@ export default function App() {
   const [shareFolderTarget, setShareFolderTarget] = useState('');
   const [shareFolderSent, setShareFolderSent] = useState(false);
 
+  const REACTION_EMOJIS = ['❤️', '😂', '😍', '🎉', '👏'];
+  const [reactionsByPhoto, setReactionsByPhoto] = useState<Record<string, { counts: Record<string, number>; mine: string | null }>>({});
+  const [openReactionPickerId, setOpenReactionPickerId] = useState<string | null>(null);
+
+  const [sharingPhotoId, setSharingPhotoId] = useState<string | null>(null);
+  const [sharePhotoTarget, setSharePhotoTarget] = useState('');
+  const [sharePhotoSentId, setSharePhotoSentId] = useState<string | null>(null);
+  const [outsideShareBusyId, setOutsideShareBusyId] = useState<string | null>(null);
+  const [outsideShareUrl, setOutsideShareUrl] = useState<Record<string, string>>({});
+
   const [sectionOrder, setSectionOrder] = useState<string[]>(['showcase', 'gallery', 'messages', 'myphotos']);
   const [showUploadPanel, setShowUploadPanel] = useState(false);
 
@@ -320,6 +338,30 @@ export default function App() {
   const [showHelpPanel, setShowHelpPanel] = useState(false);
   const [showWhatsNewPanel, setShowWhatsNewPanel] = useState(false);
   const [hasUnseenUpdate, setHasUnseenUpdate] = useState(false);
+
+  // Public single-photo share links (?share=<id>) work without signing in --
+  // this checks for that on load, before anything auth-related happens.
+  const [sharedView, setSharedView] = useState<{ status: 'checking' | 'none' | 'ready' | 'error'; data?: any }>({ status: 'checking' });
+
+  useEffect(() => {
+    const token = new URLSearchParams(window.location.search).get('share');
+    if (!token) {
+      setSharedView({ status: 'none' });
+      return;
+    }
+    supabase
+      .from('photo_shares')
+      .select('*')
+      .eq('id', token)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error || !data) {
+          setSharedView({ status: 'error' });
+        } else {
+          setSharedView({ status: 'ready', data });
+        }
+      });
+  }, []);
 
   useEffect(() => {
     const lastSeen = window.localStorage.getItem('lastSeenVersion');
@@ -669,6 +711,80 @@ export default function App() {
       if (signed?.signedUrl) {
         setPreviewUrls((prev) => ({ ...prev, [p.id]: signed.signedUrl }));
       }
+    }
+    loadReactions();
+  }
+
+  async function loadReactions() {
+    const { data, error } = await supabase.from('photo_reactions').select('photo_id, guest_email, emoji');
+    if (error || !data) return;
+    const grouped: Record<string, { counts: Record<string, number>; mine: string | null }> = {};
+    for (const row of data as { photo_id: string; guest_email: string; emoji: string }[]) {
+      if (!grouped[row.photo_id]) grouped[row.photo_id] = { counts: {}, mine: null };
+      grouped[row.photo_id].counts[row.emoji] = (grouped[row.photo_id].counts[row.emoji] || 0) + 1;
+      if (row.guest_email === session?.user?.email) grouped[row.photo_id].mine = row.emoji;
+    }
+    setReactionsByPhoto(grouped);
+  }
+
+  async function toggleReaction(photoId: string, emoji: string) {
+    const mine = reactionsByPhoto[photoId]?.mine;
+    if (mine === emoji) {
+      await supabase.from('photo_reactions').delete().eq('photo_id', photoId).eq('guest_email', session.user.email);
+    } else {
+      await supabase
+        .from('photo_reactions')
+        .upsert({ photo_id: photoId, guest_email: session.user.email, emoji }, { onConflict: 'photo_id,guest_email' });
+    }
+    setOpenReactionPickerId(null);
+    loadReactions();
+  }
+
+  async function sharePhotoInMessages(photoId: string, target: string) {
+    if (!target) return;
+    const [targetType, targetValue] = target.split(':');
+    const row: any = {
+      sender_email: session.user.email,
+      body: '📷 Shared a photo',
+      shared_photo_ids: [photoId],
+    };
+    if (targetType === 'dm') row.recipient_email = targetValue;
+    else row.group_id = targetValue;
+    const { error } = await supabase.from('messages').insert(row);
+    if (!error) {
+      setSharePhotoSentId(photoId);
+      setSharePhotoTarget('');
+    }
+  }
+
+  async function createOutsideShareLink(photo: PhotoRecord) {
+    setOutsideShareBusyId(photo.id);
+    const path = photo.preview_path || photo.original_path;
+    const bucket = photo.preview_path ? 'previews' : 'originals';
+    const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24 * 30);
+    if (!signed?.signedUrl) {
+      setOutsideShareBusyId(null);
+      return;
+    }
+    const { data, error } = await supabase
+      .from('photo_shares')
+      .insert({
+        photo_id: photo.id,
+        uploader_name: photo.uploader_name,
+        description: photo.description,
+        signed_url: signed.signedUrl,
+        media_type: photo.media_type,
+      })
+      .select()
+      .single();
+    setOutsideShareBusyId(null);
+    if (error || !data) return;
+    const shareUrl = `${CONFIG.SITE_URL}?share=${data.id}`;
+    setOutsideShareUrl((prev) => ({ ...prev, [photo.id]: shareUrl }));
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+    } catch {
+      // clipboard access may be blocked; the link is still shown on screen
     }
   }
 
@@ -1943,6 +2059,33 @@ export default function App() {
   }, [photos, uploaderFilter, categoryFilter, searchText, sortOrder, categories]);
 
   // ---------------- Render ----------------
+  if (sharedView.status === 'checking') {
+    return <div className="centered-msg">Loading…</div>;
+  }
+  if (sharedView.status === 'ready') {
+    const s = sharedView.data;
+    return (
+      <div className="shared-photo-page">
+        {s.media_type === 'video' ? (
+          <video src={s.signed_url} controls autoPlay className="shared-photo-media" />
+        ) : (
+          <img src={s.signed_url} alt="" className="shared-photo-media" />
+        )}
+        <div className="shared-photo-caption">
+          {s.description && <div>{s.description}</div>}
+          <div className="shared-photo-credit">Shared from {CONFIG.COUPLE}'s wedding album — {s.uploader_name}</div>
+        </div>
+      </div>
+    );
+  }
+  if (sharedView.status === 'error') {
+    return (
+      <div className="centered-msg">
+        <div>This link has expired or isn't available anymore.</div>
+      </div>
+    );
+  }
+
   if (authLoading) {
     return <div className="centered-msg">Loading…</div>;
   }
@@ -3132,10 +3275,82 @@ export default function App() {
                         </div>
                         {p.category && <div className="photo-desc">📁 {p.category}</div>}
                         {p.description && <div className="photo-desc">{p.description}</div>}
+                        <div className="reaction-bar">
+                          {REACTION_EMOJIS.map((emoji) => {
+                            const count = reactionsByPhoto[p.id]?.counts[emoji] || 0;
+                            if (count === 0) return null;
+                            return (
+                              <button
+                                key={emoji}
+                                className={'reaction-pill' + (reactionsByPhoto[p.id]?.mine === emoji ? ' mine' : '')}
+                                onClick={() => toggleReaction(p.id, emoji)}
+                              >
+                                {emoji} {count}
+                              </button>
+                            );
+                          })}
+                          <button
+                            className="reaction-add-btn"
+                            onClick={() => setOpenReactionPickerId(openReactionPickerId === p.id ? null : p.id)}
+                          >
+                            {reactionsByPhoto[p.id]?.mine ? '···' : '+ React'}
+                          </button>
+                          {openReactionPickerId === p.id && (
+                            <div className="reaction-picker">
+                              {REACTION_EMOJIS.map((emoji) => (
+                                <button key={emoji} onClick={() => toggleReaction(p.id, emoji)}>{emoji}</button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                         <div className="download-row">
                           <button onClick={() => downloadOriginal(p)}>High-res</button>
                           {p.preview_path && <button onClick={() => downloadPreview(p)}>Web-size</button>}
+                          <button
+                            onClick={() => {
+                              setSharingPhotoId(sharingPhotoId === p.id ? null : p.id);
+                              setSharePhotoSentId(null);
+                            }}
+                          >
+                            Share
+                          </button>
                         </div>
+                        {sharingPhotoId === p.id && (
+                          <div className="share-photo-menu">
+                            <div className="share-folder-form">
+                              <select value={sharePhotoTarget} onChange={(e) => setSharePhotoTarget(e.target.value)}>
+                                <option value="">Send to…</option>
+                                {directory.map((d) => (
+                                  <option key={d.email} value={`dm:${d.email}`}>{d.name}</option>
+                                ))}
+                                {groups.map((g) => (
+                                  <option key={g.id} value={`group:${g.id}`}>{g.name} (group)</option>
+                                ))}
+                              </select>
+                              <button
+                                className="btn-upload"
+                                disabled={!sharePhotoTarget}
+                                onClick={() => sharePhotoInMessages(p.id, sharePhotoTarget)}
+                              >
+                                Send
+                              </button>
+                            </div>
+                            {sharePhotoSentId === p.id && <div className="photo-desc">Sent! They'll see it in Messages.</div>}
+                            <button
+                              className="linklike"
+                              disabled={outsideShareBusyId === p.id}
+                              onClick={() => createOutsideShareLink(p)}
+                            >
+                              {outsideShareBusyId === p.id ? 'Creating link…' : '🔗 Get outside link'}
+                            </button>
+                            {outsideShareUrl[p.id] && (
+                              <div className="outside-share-url">
+                                <input readOnly value={outsideShareUrl[p.id]} onClick={(e) => (e.target as HTMLInputElement).select()} />
+                                <div className="photo-desc">Copied! Anyone with this link can view just this photo — no sign-in needed.</div>
+                              </div>
+                            )}
+                          </div>
+                        )}
                         {canEditOrDelete(p) && (
                           <div className="download-row">
                             <button onClick={() => startEdit(p)}>Edit</button>
@@ -3186,14 +3401,72 @@ export default function App() {
               {lightbox.category ? ` · 📁 ${lightbox.category}` : ''}
               {lightbox.description ? ` · ${lightbox.description}` : ''}
             </div>
+            <div className="reaction-bar centered">
+              {REACTION_EMOJIS.map((emoji) => {
+                const count = reactionsByPhoto[lightbox.id]?.counts[emoji] || 0;
+                return (
+                  <button
+                    key={emoji}
+                    className={'reaction-pill' + (reactionsByPhoto[lightbox.id]?.mine === emoji ? ' mine' : '')}
+                    onClick={() => toggleReaction(lightbox.id, emoji)}
+                  >
+                    {emoji} {count > 0 ? count : ''}
+                  </button>
+                );
+              })}
+            </div>
             <div className="lightbox-actions">
               <button onClick={() => lightboxStep(-1)}>◀ Back</button>
               <button onClick={() => lightboxStep(1)}>Next ▶</button>
               <button onClick={() => downloadOriginal(lightbox)}>Download high-res</button>
               {lightbox.preview_path && <button onClick={() => downloadPreview(lightbox)}>Download web-size</button>}
+              <button
+                onClick={() => {
+                  setSharingPhotoId(sharingPhotoId === lightbox.id ? null : lightbox.id);
+                  setSharePhotoSentId(null);
+                }}
+              >
+                Share
+              </button>
               {canEditOrDelete(lightbox) && <button className="delete-photo-btn" onClick={() => deletePhoto(lightbox)}>Delete</button>}
               <button className="close-btn" onClick={() => { setLightbox(null); setLightboxUrl(''); }}>Close</button>
             </div>
+            {sharingPhotoId === lightbox.id && (
+              <div className="share-photo-menu">
+                <div className="share-folder-form">
+                  <select value={sharePhotoTarget} onChange={(e) => setSharePhotoTarget(e.target.value)}>
+                    <option value="">Send to…</option>
+                    {directory.map((d) => (
+                      <option key={d.email} value={`dm:${d.email}`}>{d.name}</option>
+                    ))}
+                    {groups.map((g) => (
+                      <option key={g.id} value={`group:${g.id}`}>{g.name} (group)</option>
+                    ))}
+                  </select>
+                  <button
+                    className="btn-upload"
+                    disabled={!sharePhotoTarget}
+                    onClick={() => sharePhotoInMessages(lightbox.id, sharePhotoTarget)}
+                  >
+                    Send
+                  </button>
+                </div>
+                {sharePhotoSentId === lightbox.id && <div className="photo-desc">Sent! They'll see it in Messages.</div>}
+                <button
+                  className="linklike"
+                  disabled={outsideShareBusyId === lightbox.id}
+                  onClick={() => createOutsideShareLink(lightbox)}
+                >
+                  {outsideShareBusyId === lightbox.id ? 'Creating link…' : '🔗 Get outside link'}
+                </button>
+                {outsideShareUrl[lightbox.id] && (
+                  <div className="outside-share-url">
+                    <input readOnly value={outsideShareUrl[lightbox.id]} onClick={(e) => (e.target as HTMLInputElement).select()} />
+                    <div className="photo-desc">Copied! Anyone with this link can view just this photo — no sign-in needed.</div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {!canEditOrDelete(lightbox) && (
               <div className="takedown-row">
