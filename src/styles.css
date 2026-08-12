@@ -279,3 +279,57 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
 .share-folder-form{ display:flex; gap:8px; margin:10px 0; }
 .share-folder-form select{ flex:1; padding:8px 10px; border-radius:3px; border:1px solid rgba(201,166,107,0.4); background:rgba(255,255,255,0.9); color:var(--ink); font-size:13px; }
 .shared-folder-view-btn{ display:block; margin:6px 0; font-size:13px; padding:8px 14px; }
+
+/* ===== Desktop scale-up =====
+   Everything above this point is unchanged and still applies on all
+   screen sizes (including mobile). These rules ONLY kick in on wide
+   screens (1200px and up, roughly laptop/desktop), so mobile and
+   tablet layouts are completely unaffected. */
+@media (min-width: 1200px){
+  body{ font-size:16px; }
+
+  .topbar{ max-width:1400px; padding:40px 24px 24px; }
+  .topbar h1{ font-size:clamp(38px,4vw,54px); }
+  .topbar .date{ font-size:15px; }
+  .signed-in-as{ font-size:14px; }
+
+  .nav-pill{ font-size:26px; padding:26px 32px; min-height:84px; }
+
+  .upload-zone{ max-width:1400px; }
+  .upload-box p{ font-size:15px; }
+  .btn-upload{ font-size:15px; padding:13px 26px; }
+
+  .filters{ max-width:1400px; }
+  .filters select, .search-input{ font-size:15px; padding:11px 14px; }
+
+  .gallery-wrap{ max-width:1400px; }
+  .grid{ grid-template-columns:repeat(auto-fill, minmax(260px,1fr)); gap:28px; }
+  .photo-meta{ font-size:13px; }
+  .photo-desc{ font-size:14px; }
+  .play-badge{ width:32px; height:32px; font-size:14px; }
+  .download-row button{ font-size:13px; padding:8px 6px; }
+
+  .admin-panel{ max-width:760px; padding:24px 28px; }
+  .admin-panel h3{ font-size:22px; }
+  .guest-row{ font-size:15px; }
+  .guest-activity{ font-size:12px; }
+  .toggle-btn, .remove-btn{ font-size:13px; padding:6px 14px; }
+  .add-guest-form input{ font-size:15px; padding:11px 12px; }
+
+  .messages-panel{ max-width:900px; }
+  .myphotos-panel{ max-width:960px; }
+  .help-panel, .admin-pills{ max-width:1040px; }
+
+  .thread-item{ font-size:15px; padding:10px 12px; }
+  .thread-header{ font-size:16px; }
+  .msg-bubble{ padding:10px 12px; }
+  .msg-body{ font-size:15px; }
+
+  .myphotos-grid{ grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:14px; }
+
+  .lightbox-actions button{ font-size:15px; padding:12px 22px; }
+  .lightbox-meta{ font-size:15px; }
+
+  .slideshow-controls button{ font-size:18px; padding:14px 24px; }
+  .slideshow-caption{ font-size:16px; }
+}
