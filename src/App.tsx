@@ -131,7 +131,8 @@ export default function App() {
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
-  const [guestList, setGuestList] = useState<{ email: string; name: string; is_admin: boolean; is_disabled: boolean }[]>([]);
+  const [guestList, setGuestList] = useState<{ email: string; name: string; is_admin: boolean; is_disabled: boolean; invited_at?: string | null; first_login_at?: string | null; last_login_at?: string | null }[]>([]);
+  const [uploadCounts, setUploadCounts] = useState<Record<string, number>>({});
   const [newGuestEmail, setNewGuestEmail] = useState('');
   const [newGuestName, setNewGuestName] = useState('');
   const [guestError, setGuestError] = useState('');
@@ -457,6 +458,16 @@ export default function App() {
     const me = data.find((g: any) => g.email === session.user.email);
     setIsAdmin(!!me?.is_admin);
     setGuestList(data as any);
+
+    // Count uploads per guest email so the guest list can show "X uploads"
+    const { data: photoRows } = await supabase.from('photos').select('uploader_email');
+    if (photoRows) {
+      const counts: Record<string, number> = {};
+      for (const row of photoRows as { uploader_email: string }[]) {
+        counts[row.uploader_email] = (counts[row.uploader_email] || 0) + 1;
+      }
+      setUploadCounts(counts);
+    }
   }
 
   async function addGuest(e: React.FormEvent) {
@@ -526,6 +537,23 @@ export default function App() {
       setOtpError(error.message);
       return;
     }
+    // Record login activity: set first_login_at only if it isn't set yet,
+    // and always update last_login_at to now.
+    const loginEmail = emailInput.trim();
+    const { data: existingGuest } = await supabase
+      .from('allowed_guests')
+      .select('first_login_at')
+      .eq('email', loginEmail)
+      .maybeSingle();
+    await supabase
+      .from('allowed_guests')
+      .update({
+        last_login_at: new Date().toISOString(),
+        ...(existingGuest && !existingGuest.first_login_at
+          ? { first_login_at: new Date().toISOString() }
+          : {}),
+      })
+      .eq('email', loginEmail);
     // On success, Supabase's onAuthStateChange listener picks up the new session automatically.
   }
 
@@ -2619,6 +2647,15 @@ export default function App() {
                 <span className="guest-email">{g.email}</span>
                 {g.is_admin && <span className="admin-badge">admin</span>}
                 {g.is_disabled && <span className="disabled-badge">disabled</span>}
+                <span className="guest-activity">
+                  {g.first_login_at ? (
+                    <>Signed up {new Date(g.first_login_at).toLocaleDateString()}</>
+                  ) : (
+                    <>Invited{g.invited_at ? ` ${new Date(g.invited_at).toLocaleDateString()}` : ''}, not signed up yet</>
+                  )}
+                  {g.last_login_at && <> · Last login {new Date(g.last_login_at).toLocaleDateString()}</>}
+                  {' · '}{uploadCounts[g.email] || 0} upload{(uploadCounts[g.email] || 0) === 1 ? '' : 's'}
+                </span>
                 {g.email !== session.user.email && (
                   <>
                     <button className="toggle-btn" onClick={() => toggleGuestAdmin(g.email, g.is_admin)}>
