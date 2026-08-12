@@ -1282,7 +1282,7 @@ export default function App() {
     try {
       await fetch(CONFIG.INVITE_WEBHOOK_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({ name, email, site_url: CONFIG.SITE_URL }),
       });
       setInviteStatus('sent');
