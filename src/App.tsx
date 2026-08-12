@@ -1302,33 +1302,23 @@ export default function App() {
     myphotos: 'My Photos panel',
   };
 
-  const [inviteName, setInviteName] = useState('');
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteStatus, setInviteStatus] = useState<'idle' | 'sending' | 'sent' | 'error'>('idle');
-  const [inviteErrorMsg, setInviteErrorMsg] = useState('');
+  const [inviteStatusByEmail, setInviteStatusByEmail] = useState<Record<string, 'idle' | 'sending' | 'sent' | 'error'>>({});
 
-  async function sendInviteEmail(e: React.FormEvent) {
-    e.preventDefault();
-    setInviteErrorMsg('');
+  async function inviteGuest(email: string, name: string) {
     if (!CONFIG.INVITE_WEBHOOK_URL) {
-      setInviteErrorMsg('The invite webhook isn\'t set up yet — add the Zapier URL to CONFIG.INVITE_WEBHOOK_URL.');
+      setGuestError('The invite webhook isn\'t set up yet — add the Zapier URL to CONFIG.INVITE_WEBHOOK_URL.');
       return;
     }
-    const name = inviteName.trim();
-    const email = inviteEmail.trim();
-    if (!name || !email) return;
-    setInviteStatus('sending');
+    setInviteStatusByEmail((s) => ({ ...s, [email]: 'sending' }));
     try {
       await fetch(CONFIG.INVITE_WEBHOOK_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain' },
         body: JSON.stringify({ name, email, site_url: CONFIG.SITE_URL }),
       });
-      setInviteStatus('sent');
-      setInviteName('');
-      setInviteEmail('');
+      setInviteStatusByEmail((s) => ({ ...s, [email]: 'sent' }));
     } catch {
-      setInviteStatus('error');
+      setInviteStatusByEmail((s) => ({ ...s, [email]: 'error' }));
     }
   }
 
@@ -2669,6 +2659,17 @@ export default function App() {
                 </span>
                 {g.email !== session.user.email && (
                   <>
+                    <button
+                      className="toggle-btn"
+                      onClick={() => inviteGuest(g.email, g.name)}
+                      disabled={inviteStatusByEmail[g.email] === 'sending'}
+                    >
+                      {inviteStatusByEmail[g.email] === 'sending'
+                        ? 'Sending…'
+                        : inviteStatusByEmail[g.email] === 'sent'
+                        ? 'Sent!'
+                        : 'Invite'}
+                    </button>
                     <button className="toggle-btn" onClick={() => toggleGuestAdmin(g.email, g.is_admin)}>
                       {g.is_admin ? 'Remove admin' : 'Make admin'}
                     </button>
@@ -2687,17 +2688,6 @@ export default function App() {
             <button className="btn-upload" type="submit">Add to guest list</button>
           </form>
           {guestError && <div className="gate-error">{guestError}</div>}
-
-          <div className="thread-list-heading">Send an invite email (for people who got blocked signing in)</div>
-          <form className="add-guest-form" onSubmit={sendInviteEmail}>
-            <input placeholder="Name" value={inviteName} onChange={(e) => setInviteName(e.target.value)} />
-            <input placeholder="Email" type="email" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
-            <button className="btn-upload" type="submit" disabled={inviteStatus === 'sending'}>
-              {inviteStatus === 'sending' ? 'Sending…' : 'Send invite'}
-            </button>
-          </form>
-          {inviteStatus === 'sent' && <div className="photo-desc">Invite sent!</div>}
-          {inviteErrorMsg && <div className="gate-error">{inviteErrorMsg}</div>}
         </div>
       )}
 
