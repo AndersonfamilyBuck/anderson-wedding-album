@@ -88,7 +88,7 @@ const CHANGELOG: { version: string; notes: string[] }[] = [
   {
     version: '1.2',
     notes: [
-      'Sign in with a 6-digit code (more reliable than clicking email links)',
+      'Sign in with an 8-digit code (more reliable than clicking email links)',
       'Fixed photos from iPhones (HEIC) not showing a preview',
     ],
   },
@@ -214,8 +214,8 @@ export default function App() {
   const TUTORIAL_SCRIPTS: Record<string, { instruction: string; caption: string }[]> = {
     onboarding: [
       { instruction: 'Sign out, then screenshot the sign-in page with the email box empty.', caption: 'Enter your name and email to get started.' },
-      { instruction: "Enter an email and screenshot the page right after tapping \"Send me a sign-in code.\"", caption: 'Check your email for a 6-digit code.' },
-      { instruction: 'Screenshot the code-entry box on the sign-in page.', caption: 'Type the 6-digit code here to sign in.' },
+      { instruction: "Enter an email and screenshot the page right after tapping \"Send me a sign-in code.\"", caption: 'Check your email for an 8-digit code.' },
+      { instruction: 'Screenshot the code-entry box on the sign-in page.', caption: 'Type the 8-digit code here to sign in.' },
       { instruction: 'Once signed in, screenshot the main gallery page.', caption: "You're in! This is the gallery — everyone's photos and videos live here." },
     ],
     uploading: [
@@ -512,7 +512,7 @@ export default function App() {
     setOtpError('');
     const code = otpCode.trim();
     if (!code) {
-      setOtpError('Enter the 6-digit code from your email.');
+      setOtpError('Enter the 8-digit code from your email.');
       return;
     }
     setOtpVerifying(true);
@@ -1904,15 +1904,15 @@ export default function App() {
             <div className="eyebrow">You're invited</div>
             <h1>The Album</h1>
             <div className="gate-sub">
-              Check your email — enter the 6-digit code below (this works better than tapping the link,
+              Check your email — enter the 8-digit code below (this works better than tapping the link,
               especially in the Gmail app).
             </div>
             <div className="field">
-              <label>6-digit code</label>
+              <label>8-digit code</label>
               <input
                 value={otpCode}
                 onChange={(e) => setOtpCode(e.target.value)}
-                placeholder="123456"
+                placeholder="12345678"
                 inputMode="numeric"
                 autoFocus
               />
