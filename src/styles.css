@@ -41,9 +41,10 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
 .admin-panel{ width:100%; max-width:600px; margin:0 auto 10px; background:rgba(255,255,255,0.05); border:1px solid rgba(201,166,107,0.35); border-radius:6px; padding:18px 20px; }
 .admin-panel h3{ font-style:italic; margin-bottom:12px; font-size:18px; }
 .guest-rows{ display:flex; flex-direction:column; gap:8px; margin-bottom:16px; }
-.guest-row{ display:flex; align-items:center; gap:10px; font-size:13px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.08); }
+.guest-row{ display:flex; align-items:center; gap:10px; font-size:13px; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.08); flex-wrap:wrap; }
 .guest-name{ font-weight:600; min-width:100px; }
 .guest-email{ color:rgba(243,236,228,0.6); flex:1; }
+.guest-activity{ width:100%; font-size:11px; color:rgba(243,236,228,0.45); font-style:italic; }
 .admin-badge{ font-family:'IBM Plex Mono', monospace; font-size:10px; background:var(--gold); color:var(--plum-deep); padding:2px 6px; border-radius:2px; }
 .disabled-badge{ font-family:'IBM Plex Mono', monospace; font-size:10px; background:rgba(217,138,148,0.3); color:var(--rose); padding:2px 6px; border-radius:2px; }
 .toggle-btn{ background:none; border:1px solid rgba(201,166,107,0.5); color:var(--gold); padding:4px 10px; border-radius:3px; font-size:11px; }
