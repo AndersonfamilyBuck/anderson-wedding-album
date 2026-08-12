@@ -50,8 +50,19 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '1.6';
+const CURRENT_VERSION = '1.7';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '1.7',
+    notes: [
+      'Sign-in codes now correctly show as 8 digits (matches what\'s emailed to you)',
+      'Your email is remembered on this device, so it\'s already filled in next time you sign in',
+      'Admins can see when each guest was invited, when they signed up, when they last logged in, and how many photos they\'ve uploaded',
+      'Adding a new guest now sends their invite automatically — one step instead of two',
+      'A one-click "Resend invite" button on each guest, for anyone who calls or emails needing help getting in',
+      'Bigger text, buttons, and photo grid on laptop/desktop screens (phones and tablets look the same as before)',
+    ],
+  },
   {
     version: '1.6',
     notes: [
