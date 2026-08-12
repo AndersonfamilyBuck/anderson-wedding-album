@@ -104,7 +104,13 @@ const PREVIEW_QUALITY = 0.75;
 export default function App() {
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [emailInput, setEmailInput] = useState('');
+  const [emailInput, setEmailInput] = useState(() => {
+    try {
+      return localStorage.getItem('lastSignInEmail') || '';
+    } catch {
+      return '';
+    }
+  });
   const [nameInput, setNameInput] = useState('');
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [otpCode, setOtpCode] = useState('');
@@ -514,6 +520,11 @@ export default function App() {
     if (error) {
       setAuthError(error.message);
       return;
+    }
+    try {
+      localStorage.setItem('lastSignInEmail', emailInput.trim());
+    } catch {
+      // ignore storage errors (e.g. private browsing)
     }
     setMagicLinkSent(true);
   }
