@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef, Fragment } from 'react';
 import { supabase } from './supabaseClient';
 
 type MediaType = 'photo' | 'video';
@@ -13,6 +13,7 @@ interface PhotoRecord {
   original_path: string;
   preview_path: string | null;
   created_at: string;
+  sort_order: number | null;
 }
 
 interface DirectoryEntry {
@@ -50,8 +51,16 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '1.7';
+const CURRENT_VERSION = '1.8';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '1.8',
+    notes: [
+      'Categories can now be put in any order you like (Categories panel → arrows)',
+      'A new "By category order" gallery sort, grouped with headings',
+      'Admins can set one master photo order (Reorder photos panel) — used by that sort and by slideshows',
+    ],
+  },
   {
     version: '1.7',
     notes: [
@@ -141,7 +150,7 @@ export default function App() {
 
   const [uploaderFilter, setUploaderFilter] = useState('all');
   const [searchText, setSearchText] = useState('');
-  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'uploader'>('newest');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'uploader' | 'category'>('newest');
 
   const [lightbox, setLightbox] = useState<PhotoRecord | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string>('');
@@ -156,7 +165,7 @@ export default function App() {
 
   const [isDragOver, setIsDragOver] = useState(false);
 
-  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const [categories, setCategories] = useState<{ id: string; name: string; sort_order: number | null }[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [showCategoryPanel, setShowCategoryPanel] = useState(false);
@@ -295,6 +304,7 @@ export default function App() {
   const [activeTutorialUrl, setActiveTutorialUrl] = useState('');
   const [activeTutorialTitle, setActiveTutorialTitle] = useState('');
   const [showManageTutorials, setShowManageTutorials] = useState(false);
+  const [showReorderPanel, setShowReorderPanel] = useState(false);
   const [uploadingTutorialKey, setUploadingTutorialKey] = useState<string | null>(null);
   const tutorialFileInputRef = useRef<HTMLInputElement>(null);
   const tutorialSlideFileInputRef = useRef<HTMLInputElement>(null);
@@ -445,9 +455,45 @@ export default function App() {
   }
 
   async function loadCategories() {
-    const { data, error } = await supabase.from('categories').select('*').order('name');
+    const { data, error } = await supabase.from('categories').select('*').order('sort_order').order('name');
     if (error || !data) return;
     setCategories(data as any);
+  }
+
+  async function moveCategory(id: string, direction: 'up' | 'down') {
+    const idx = categories.findIndex((c) => c.id === id);
+    if (idx === -1) return;
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= categories.length) return;
+    const a = categories[idx];
+    const b = categories[swapIdx];
+    const aOrder = a.sort_order ?? Date.now();
+    const bOrder = b.sort_order ?? Date.now() + 1;
+    await supabase.from('categories').update({ sort_order: bOrder }).eq('id', a.id);
+    await supabase.from('categories').update({ sort_order: aOrder }).eq('id', b.id);
+    loadCategories();
+  }
+
+  const photoOrderList = useMemo(() => {
+    return [...photos].sort((a, b) => {
+      const orderDiff = (a.sort_order ?? Number.MAX_SAFE_INTEGER) - (b.sort_order ?? Number.MAX_SAFE_INTEGER);
+      if (orderDiff !== 0) return orderDiff;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [photos]);
+
+  async function movePhotoOrder(id: string, direction: 'up' | 'down') {
+    const idx = photoOrderList.findIndex((p) => p.id === id);
+    if (idx === -1) return;
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= photoOrderList.length) return;
+    const a = photoOrderList[idx];
+    const b = photoOrderList[swapIdx];
+    const aOrder = a.sort_order ?? Date.now();
+    const bOrder = b.sort_order ?? Date.now() + 1;
+    await supabase.from('photos').update({ sort_order: bOrder }).eq('id', a.id);
+    await supabase.from('photos').update({ sort_order: aOrder }).eq('id', b.id);
+    loadPhotos();
   }
 
   async function addCategory(e: React.FormEvent) {
@@ -1878,11 +1924,23 @@ export default function App() {
       list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     } else if (sortOrder === 'oldest') {
       list.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+    } else if (sortOrder === 'category') {
+      const categoryRank = new Map<string, number>();
+      categories.forEach((c, i) => categoryRank.set(c.name, i));
+      const rankOf = (p: PhotoRecord) => (p.category && categoryRank.has(p.category) ? categoryRank.get(p.category)! : categories.length);
+      const orderOf = (p: PhotoRecord) => p.sort_order ?? Number.MAX_SAFE_INTEGER;
+      list.sort((a, b) => {
+        const rankDiff = rankOf(a) - rankOf(b);
+        if (rankDiff !== 0) return rankDiff;
+        const orderDiff = orderOf(a) - orderOf(b);
+        if (orderDiff !== 0) return orderDiff;
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      });
     } else {
       list.sort((a, b) => a.uploader_name.localeCompare(b.uploader_name));
     }
     return list;
-  }, [photos, uploaderFilter, categoryFilter, searchText, sortOrder]);
+  }, [photos, uploaderFilter, categoryFilter, searchText, sortOrder, categories]);
 
   // ---------------- Render ----------------
   if (authLoading) {
@@ -2026,6 +2084,9 @@ export default function App() {
                 </button>
                 <button className={'nav-pill' + (showManageTutorials ? ' active' : '')} onClick={() => setShowManageTutorials((v) => !v)}>
                   🎬 {showManageTutorials ? 'Hide tutorial videos' : 'Tutorial videos'}
+                </button>
+                <button className={'nav-pill' + (showReorderPanel ? ' active' : '')} onClick={() => setShowReorderPanel((v) => !v)}>
+                  🔀 {showReorderPanel ? 'Hide reorder photos' : 'Reorder photos'}
                 </button>
               </div>
             )}
@@ -2705,10 +2766,13 @@ export default function App() {
       {isAdmin && showCategoryPanel && (
         <div className="admin-panel" style={{ order: -10 }}>
           <h3>Categories</h3>
+          <div className="photo-desc">Drag isn't available yet — use the arrows to set the order photos will follow when "By category order" is selected in the gallery.</div>
           <div className="guest-rows">
-            {categories.map((c) => (
+            {categories.map((c, i) => (
               <div className="guest-row" key={c.id}>
                 <span className="guest-name">{c.name}</span>
+                <button className="toggle-btn" disabled={i === 0} onClick={() => moveCategory(c.id, 'up')}>↑</button>
+                <button className="toggle-btn" disabled={i === categories.length - 1} onClick={() => moveCategory(c.id, 'down')}>↓</button>
                 <button className="remove-btn" onClick={() => removeCategory(c.id)}>Remove</button>
               </div>
             ))}
@@ -2719,6 +2783,27 @@ export default function App() {
             <button className="btn-upload" type="submit">Add category</button>
           </form>
           {categoryError && <div className="gate-error">{categoryError}</div>}
+        </div>
+      )}
+
+      {isAdmin && showReorderPanel && (
+        <div className="admin-panel reorder-panel" style={{ order: -10 }}>
+          <h3>Reorder photos</h3>
+          <div className="photo-desc">
+            Set one master order for every photo. This order is used by the gallery's "By category order" sort and by slideshows.
+          </div>
+          <div className="guest-rows">
+            {photoOrderList.map((p, i) => (
+              <div className="guest-row reorder-row" key={p.id}>
+                {previewUrls[p.id] && <img className="reorder-thumb" src={previewUrls[p.id]} alt="" />}
+                <span className="guest-name">{p.uploader_name}</span>
+                <span className="guest-email">{p.description || p.category || ''}</span>
+                <button className="toggle-btn" disabled={i === 0} onClick={() => movePhotoOrder(p.id, 'up')}>↑</button>
+                <button className="toggle-btn" disabled={i === photoOrderList.length - 1} onClick={() => movePhotoOrder(p.id, 'down')}>↓</button>
+              </div>
+            ))}
+            {photoOrderList.length === 0 && <div className="photo-desc">No photos yet.</div>}
+          </div>
         </div>
       )}
 
@@ -2935,6 +3020,7 @@ export default function App() {
               <option value="newest">Newest first</option>
               <option value="oldest">Oldest first</option>
               <option value="uploader">By submitter name</option>
+              <option value="category">By category order</option>
             </select>
             <button className="btn-upload" onClick={() => startSlideshow(filteredPhotos)}>
               ▶️ Play slideshow
@@ -2972,8 +3058,17 @@ export default function App() {
               </div>
             ) : (
               <div className="grid">
-                {filteredPhotos.map((p) => (
-                  <div className={'photo-card' + (selectMode && selectedPhotoIds.includes(p.id) ? ' selected' : '')} key={p.id}>
+                {(() => {
+                  let lastCategoryHeading: string | null | undefined = undefined;
+                  return filteredPhotos.map((p) => {
+                    const showHeading = sortOrder === 'category' && p.category !== lastCategoryHeading;
+                    if (showHeading) lastCategoryHeading = p.category;
+                    return (
+                      <Fragment key={p.id}>
+                        {showHeading && (
+                          <div className="category-heading">📁 {p.category || 'Uncategorized'}</div>
+                        )}
+                  <div className={'photo-card' + (selectMode && selectedPhotoIds.includes(p.id) ? ' selected' : '')}>
                     <div
                       className="photo-frame"
                       onClick={() => {
@@ -3050,7 +3145,10 @@ export default function App() {
                       </>
                     )}
                   </div>
-                ))}
+                      </Fragment>
+                    );
+                  });
+                })()}
               </div>
             )}
           </div>
