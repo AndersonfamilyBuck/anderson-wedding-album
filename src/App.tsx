@@ -1997,6 +1997,19 @@ export default function App() {
         <div className="admin-panel help-panel" style={{ order: -20 }}>
           <h3>How this site works</h3>
 
+          {TUTORIAL_KEYS.some((t) => hasTutorial(t.key)) && (
+            <>
+              <div className="help-section-title">🎬 Watch a quick tutorial</div>
+              <div className="tutorial-watch-list">
+                {TUTORIAL_KEYS.filter((t) => hasTutorial(t.key)).map((t) => (
+                  <button key={t.key} className="btn-upload tutorial-watch-btn" onClick={() => openTutorial(t.key)}>
+                    ▶️ {t.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
           <div className="help-section-title">Sharing photos & videos</div>
           <div className="help-grid">
             <div className="help-item">
