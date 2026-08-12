@@ -182,6 +182,9 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
 .help-section-title{ font-family:'IBM Plex Mono', monospace; font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:var(--gold); margin:22px 0 6px; }
 .help-section-title:first-of-type{ margin-top:6px; }
 
+.tutorial-watch-list{ display:flex; flex-wrap:wrap; gap:12px; margin:10px 0 24px; }
+.tutorial-watch-btn{ font-size:14px; padding:12px 18px; }
+
 .nav-pill.has-unseen{ border-color:#e0575f; }
 .unseen-dot{ width:8px; height:8px; border-radius:50%; background:#e0575f; display:inline-block; margin-left:6px; }
 .whats-new-panel{ max-width:600px; }
