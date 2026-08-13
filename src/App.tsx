@@ -51,8 +51,15 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '2.3';
+const CURRENT_VERSION = '2.4';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '2.4',
+    notes: [
+      'Fixed a bug where dropping a photo could open it in a new browser tab instead of uploading it',
+      'The whole upload window now accepts a drop, not just the small dashed box inside it',
+    ],
+  },
   {
     version: '2.3',
     notes: [
@@ -410,8 +417,24 @@ export default function App() {
         setShowUploadPanel(true);
       }
     }
+    // Without these, dropping a file anywhere that ISN'T exactly the upload
+    // box falls through to the browser's default behavior -- opening the
+    // image in a new tab instead of doing nothing. Always blocking the
+    // default here (and letting the upload box's own onDrop handle the
+    // actual file) fixes that everywhere on the page.
+    function preventDefaultDrag(e: DragEvent) {
+      if (e.dataTransfer?.types?.includes('Files')) {
+        e.preventDefault();
+      }
+    }
     window.addEventListener('dragenter', handleWindowDragEnter);
-    return () => window.removeEventListener('dragenter', handleWindowDragEnter);
+    window.addEventListener('dragover', preventDefaultDrag);
+    window.addEventListener('drop', preventDefaultDrag);
+    return () => {
+      window.removeEventListener('dragenter', handleWindowDragEnter);
+      window.removeEventListener('dragover', preventDefaultDrag);
+      window.removeEventListener('drop', preventDefaultDrag);
+    };
   }, []);
 
   function openWhatsNew() {
@@ -3304,7 +3327,20 @@ export default function App() {
           </button>
 
           {showUploadPanel && (
-            <div className="upload-fab-panel">
+            <div
+              className={`upload-fab-panel${isDragOver ? ' dragover' : ''}`}
+              onDragEnter={(e) => { e.preventDefault(); setIsDragOver(true); }}
+              onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+              onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragOver(false);
+                const files = Array.from(e.dataTransfer.files || []).filter(
+                  (f) => f.type.startsWith('image/') || f.type.startsWith('video/')
+                );
+                handleFiles(files);
+              }}
+            >
               <div className="upload-fab-panel-header">
                 <strong>Add photos or videos</strong>
                 {hasTutorial('uploading') && (
@@ -3312,20 +3348,7 @@ export default function App() {
                 )}
                 <button className="linklike" onClick={() => setShowUploadPanel(false)}>Close</button>
               </div>
-              <div
-                className={`upload-box${isDragOver ? ' dragover' : ''}`}
-                onDragEnter={(e) => { e.preventDefault(); setIsDragOver(true); }}
-                onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
-                onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setIsDragOver(false);
-                  const files = Array.from(e.dataTransfer.files || []).filter(
-                    (f) => f.type.startsWith('image/') || f.type.startsWith('video/')
-                  );
-                  handleFiles(files);
-                }}
-              >
+              <div className={`upload-box${isDragOver ? ' dragover' : ''}`}>
                 <p>Drag photos or videos here, or choose files below</p>
                 <button className="btn-upload" onClick={() => fileInputRef.current?.click()}>
                   Choose photos or videos
