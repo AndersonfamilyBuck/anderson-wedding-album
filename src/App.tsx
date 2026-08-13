@@ -51,8 +51,15 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '2.1';
+const CURRENT_VERSION = '2.2';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '2.2',
+    notes: [
+      'The "Add Your Photos & Videos" banner is now a drop zone — drag files right onto it',
+      'After choosing photos or videos, you can now set a description and category for each one individually before uploading',
+    ],
+  },
   {
     version: '2.1',
     notes: [
@@ -168,7 +175,14 @@ export default function App() {
   const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const [loadingGallery, setLoadingGallery] = useState(true);
   const [uploadingFiles, setUploadingFiles] = useState<string[]>([]);
-  const [batchDescription, setBatchDescription] = useState('');
+  interface PendingUpload {
+    id: string;
+    file: File;
+    previewUrl: string;
+    description: string;
+    category: string;
+  }
+  const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
 
   const [uploaderFilter, setUploaderFilter] = useState('all');
   const [searchText, setSearchText] = useState('');
@@ -188,7 +202,6 @@ export default function App() {
   const [isDragOver, setIsDragOver] = useState(false);
 
   const [categories, setCategories] = useState<{ id: string; name: string; sort_order: number | null }[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [mediaTypeFilter, setMediaTypeFilter] = useState<'all' | 'photo' | 'video'>('all');
   const [showCategoryPanel, setShowCategoryPanel] = useState(false);
@@ -1831,31 +1844,56 @@ export default function App() {
     });
   }
 
-  async function handleFiles(files: File[]) {
-    if (!files.length || !session) return;
-    const displayName = session.user.user_metadata?.display_name || session.user.email;
+  function handleFiles(files: File[]) {
+    if (!files.length) return;
+    const staged: PendingUpload[] = files.map((file) => ({
+      id: crypto.randomUUID(),
+      file,
+      previewUrl: URL.createObjectURL(file),
+      description: '',
+      category: '',
+    }));
+    setPendingUploads((prev) => [...prev, ...staged]);
+  }
 
-    for (const file of files) {
-      setUploadingFiles((f) => [...f, file.name]);
+  function updatePendingUpload(id: string, patch: Partial<Pick<PendingUpload, 'description' | 'category'>>) {
+    setPendingUploads((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+  }
+
+  function removePendingUpload(id: string) {
+    setPendingUploads((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target) URL.revokeObjectURL(target.previewUrl);
+      return prev.filter((p) => p.id !== id);
+    });
+  }
+
+  async function uploadPendingFiles() {
+    if (!pendingUploads.length || !session) return;
+    const displayName = session.user.user_metadata?.display_name || session.user.email;
+    const queue = [...pendingUploads];
+
+    for (const item of queue) {
+      setUploadingFiles((f) => [...f, item.file.name]);
       try {
-        const isVideo = file.type.startsWith('video/');
+        const isVideo = item.file.type.startsWith('video/');
         const mediaType: MediaType = isVideo ? 'video' : 'photo';
         const id = crypto.randomUUID();
-        const ext = file.name.split('.').pop() || (isVideo ? 'mp4' : 'jpg');
+        const ext = item.file.name.split('.').pop() || (isVideo ? 'mp4' : 'jpg');
         const originalPath = `${id}/original.${ext}`;
 
         // Upload full-resolution original, untouched
         const { error: origErr } = await supabase.storage
           .from('originals')
-          .upload(originalPath, file, { contentType: file.type });
+          .upload(originalPath, item.file, { contentType: item.file.type });
         if (origErr) throw origErr;
 
         // Generate + upload a preview (resized photo, or a captured video frame)
         let previewPath: string | null = null;
         try {
           const previewBlob = isVideo
-            ? await captureVideoThumbnail(file)
-            : await resizeImageToBlob(await fileToImageSource(file), MAX_PREVIEW_DIM, PREVIEW_QUALITY);
+            ? await captureVideoThumbnail(item.file)
+            : await resizeImageToBlob(await fileToImageSource(item.file), MAX_PREVIEW_DIM, PREVIEW_QUALITY);
           previewPath = `${id}/preview.jpg`;
           await supabase.storage
             .from('previews')
@@ -1869,18 +1907,19 @@ export default function App() {
           uploader_email: session.user.email,
           uploader_name: displayName,
           media_type: mediaType,
-          description: batchDescription.trim(),
-          category: selectedCategory || null,
+          description: item.description.trim(),
+          category: item.category || null,
           original_path: originalPath,
           preview_path: previewPath,
         });
         if (insertErr) throw insertErr;
       } catch (err) {
-        console.error('Upload failed for', file.name, err);
+        console.error('Upload failed for', item.file.name, err);
       }
-      setUploadingFiles((f) => f.filter((n) => n !== file.name));
+      setUploadingFiles((f) => f.filter((n) => n !== item.file.name));
+      URL.revokeObjectURL(item.previewUrl);
     }
-    setBatchDescription('');
+    setPendingUploads([]);
     loadPhotos();
   }
 
@@ -3153,10 +3192,24 @@ export default function App() {
 
       {!notAllowed && (
         <>
-          <div className="upload-hero">
+          <div
+            className={`upload-hero${isDragOver ? ' dragover' : ''}`}
+            onDragEnter={(e) => { e.preventDefault(); setIsDragOver(true); }}
+            onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+            onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setIsDragOver(false);
+              setShowUploadPanel(true);
+              const files = Array.from(e.dataTransfer.files || []).filter(
+                (f) => f.type.startsWith('image/') || f.type.startsWith('video/')
+              );
+              handleFiles(files);
+            }}
+          >
             <div className="upload-hero-icon">📸</div>
             <h2>Add Your Photos &amp; Videos</h2>
-            <p>Got pictures or clips from the big day? Add them here to share with everyone.</p>
+            <p>Got pictures or clips from the big day? Drag them here, or tap below to choose files.</p>
             <button className="btn-upload upload-hero-btn" onClick={() => setShowUploadPanel(true)}>
               📤 Upload Photos &amp; Videos
             </button>
@@ -3267,25 +3320,7 @@ export default function App() {
                   handleFiles(files);
                 }}
               >
-                <p>Drag photos or videos here, or add a description and choose files below</p>
-                <input
-                  className="desc-input"
-                  placeholder="e.g. First dance"
-                  value={batchDescription}
-                  onChange={(e) => setBatchDescription(e.target.value)}
-                />
-                {categories.length > 0 && (
-                  <select
-                    className="desc-input"
-                    value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
-                  >
-                    <option value="">No category</option>
-                    {categories.map((c) => (
-                      <option key={c.id} value={c.name}>{c.name}</option>
-                    ))}
-                  </select>
-                )}
+                <p>Drag photos or videos here, or choose files below</p>
                 <button className="btn-upload" onClick={() => fileInputRef.current?.click()}>
                   Choose photos or videos
                 </button>
@@ -3301,6 +3336,42 @@ export default function App() {
                   }}
                 />
               </div>
+
+              {pendingUploads.length > 0 && (
+                <div className="pending-uploads">
+                  <div className="photo-desc">Add a description and category for each one, then upload.</div>
+                  {pendingUploads.map((item) => (
+                    <div className="pending-upload-row" key={item.id}>
+                      <img className="pending-upload-thumb" src={item.previewUrl} alt="" />
+                      <div className="pending-upload-fields">
+                        <input
+                          className="desc-input"
+                          placeholder="Description (optional)"
+                          value={item.description}
+                          onChange={(e) => updatePendingUpload(item.id, { description: e.target.value })}
+                        />
+                        {categories.length > 0 && (
+                          <select
+                            className="desc-input"
+                            value={item.category}
+                            onChange={(e) => updatePendingUpload(item.id, { category: e.target.value })}
+                          >
+                            <option value="">No category</option>
+                            {categories.map((c) => (
+                              <option key={c.id} value={c.name}>{c.name}</option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                      <button className="remove-btn" onClick={() => removePendingUpload(item.id)}>✕</button>
+                    </div>
+                  ))}
+                  <button className="btn-upload" onClick={uploadPendingFiles} disabled={uploadingFiles.length > 0}>
+                    Upload {pendingUploads.length} item{pendingUploads.length === 1 ? '' : 's'}
+                  </button>
+                </div>
+              )}
+
               {uploadingFiles.length > 0 && (
                 <div className="upload-status">Uploading {uploadingFiles.join(', ')}…</div>
               )}
