@@ -51,8 +51,14 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '2.2';
+const CURRENT_VERSION = '2.3';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '2.3',
+    notes: [
+      'The upload window is much bigger on laptop/desktop screens, so it\'s easier to see and fill in each photo\'s details',
+    ],
+  },
   {
     version: '2.2',
     notes: [
