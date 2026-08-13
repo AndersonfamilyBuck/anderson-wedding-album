@@ -60,6 +60,7 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
 
 .upload-zone{ width:100%; max-width:1080px; padding:0 24px; margin-bottom:8px; }
 .upload-box{ border:1.5px dashed rgba(201,166,107,0.55); border-radius:6px; padding:22px; text-align:center; background:rgba(255,255,255,0.03); }
+.upload-box.dragover{ border-color:var(--gold); background:rgba(201,166,107,0.15); }
 .upload-box p{ margin:0 0 10px; font-size:13px; color:rgba(243,236,228,0.75); }
 .desc-input{ display:block; margin:0 auto 14px; width:min(340px, 90%); padding:9px 12px; border-radius:3px; border:1px solid #6b5468; background:rgba(255,255,255,0.9); color:var(--ink); }
 .btn-upload{ background:var(--gold); color:var(--plum-deep); border:none; padding:11px 22px; border-radius:3px; font-size:13px; font-weight:600; }
@@ -330,6 +331,13 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
 .upload-hero h2{ font-size:22px; margin:4px 0 6px; }
 .upload-hero p{ margin:0 0 16px; font-size:14px; color:rgba(243,236,228,0.85); }
 .upload-hero-btn{ font-size:16px; padding:14px 28px; box-shadow:0 4px 14px rgba(0,0,0,0.3); }
+.upload-hero.dragover{ background:linear-gradient(160deg, rgba(201,166,107,0.5), rgba(217,138,148,0.28)); box-shadow:0 0 0 4px rgba(201,166,107,0.35), 0 10px 30px -10px rgba(0,0,0,0.4); }
+
+.pending-uploads{ margin-top:14px; display:flex; flex-direction:column; gap:10px; }
+.pending-upload-row{ display:flex; align-items:center; gap:10px; background:rgba(255,255,255,0.05); border-radius:6px; padding:8px; }
+.pending-upload-thumb{ width:52px; height:52px; object-fit:cover; border-radius:4px; flex-shrink:0; }
+.pending-upload-fields{ flex:1; display:flex; flex-direction:column; gap:6px; min-width:0; }
+.pending-upload-fields .desc-input{ margin:0; width:100%; }
 
 /* ===== Desktop scale-up =====
    Everything above this point is unchanged and still applies on all
