@@ -314,6 +314,22 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
 .reorder-click-badge{ position:absolute; top:4px; left:4px; background:var(--gold); color:var(--plum-deep); font-weight:700; font-size:13px; min-width:22px; height:22px; border-radius:50%; display:flex; align-items:center; justify-content:center; }
 .reorder-click-actions{ display:flex; gap:10px; margin-top:6px; }
 
+.upload-hero{
+  width:calc(100% - 32px);
+  max-width:600px;
+  margin:0 auto 24px;
+  padding:28px 24px;
+  text-align:center;
+  background:linear-gradient(160deg, rgba(201,166,107,0.28), rgba(217,138,148,0.16));
+  border:2px solid var(--gold);
+  border-radius:14px;
+  box-shadow:0 10px 30px -10px rgba(0,0,0,0.4);
+}
+.upload-hero-icon{ font-size:38px; line-height:1; margin-bottom:6px; }
+.upload-hero h2{ font-size:22px; margin:4px 0 6px; }
+.upload-hero p{ margin:0 0 16px; font-size:14px; color:rgba(243,236,228,0.85); }
+.upload-hero-btn{ font-size:16px; padding:14px 28px; box-shadow:0 4px 14px rgba(0,0,0,0.3); }
+
 /* ===== Desktop scale-up =====
    Everything above this point is unchanged and still applies on all
    screen sizes (including mobile). These rules ONLY kick in on wide
@@ -323,6 +339,10 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
   body{ font-size:16px; }
 
   .topbar{ max-width:1400px; padding:40px 24px 24px; }
+  .upload-hero{ max-width:760px; padding:34px 30px; }
+  .upload-hero-icon{ font-size:46px; }
+  .upload-hero h2{ font-size:28px; }
+  .upload-hero p{ font-size:15px; }
   .topbar h1{ font-size:clamp(38px,4vw,54px); }
   .topbar .date{ font-size:15px; }
   .signed-in-as{ font-size:14px; }
