@@ -352,6 +352,23 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
   .upload-hero-icon{ font-size:46px; }
   .upload-hero h2{ font-size:28px; }
   .upload-hero p{ font-size:15px; }
+
+  .upload-fab-panel{
+    position:fixed;
+    top:5vh;
+    left:50%;
+    right:auto;
+    bottom:auto;
+    transform:translateX(-50%);
+    width:min(900px, 90vw);
+    max-height:90vh;
+    padding:32px;
+  }
+  .upload-fab-panel-header strong{ font-size:20px; }
+  .pending-upload-thumb{ width:72px; height:72px; }
+  .pending-upload-fields{ flex-direction:row; gap:12px; }
+  .pending-upload-fields .desc-input{ width:auto; flex:1; }
+
   .topbar h1{ font-size:clamp(38px,4vw,54px); }
   .topbar .date{ font-size:15px; }
   .signed-in-as{ font-size:14px; }
