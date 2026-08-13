@@ -51,8 +51,14 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '2.0';
+const CURRENT_VERSION = '2.1';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '2.1',
+    notes: [
+      'A big "Add Your Photos & Videos" button now sits right at the top of the page, so it\'s impossible to miss on your first visit',
+    ],
+  },
   {
     version: '2.0',
     notes: [
@@ -3141,6 +3147,15 @@ export default function App() {
 
       {!notAllowed && (
         <>
+          <div className="upload-hero">
+            <div className="upload-hero-icon">📸</div>
+            <h2>Add Your Photos &amp; Videos</h2>
+            <p>Got pictures or clips from the big day? Add them here to share with everyone.</p>
+            <button className="btn-upload upload-hero-btn" onClick={() => setShowUploadPanel(true)}>
+              📤 Upload Photos &amp; Videos
+            </button>
+          </div>
+
           {showcasePhotos.length > 0 && (
             <div className="showcase-feed" style={{ order: sectionOrder.indexOf('showcase') }}>
               <h3 className="showcase-title">📰 Recent posts</h3>
