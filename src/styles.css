@@ -201,6 +201,7 @@ button{ font-family:'Work Sans', sans-serif; cursor:pointer; }
 .upload-fab.uploading{ background:#e0a63a; }
 .upload-fab:hover{ transform:scale(1.06); }
 .upload-fab-panel{ position:fixed; bottom:100px; right:24px; width:min(360px, calc(100vw - 32px)); max-height:70vh; overflow-y:auto; background:var(--plum); border:1px solid rgba(201,166,107,0.4); border-radius:12px; padding:18px; box-shadow:0 8px 30px rgba(0,0,0,0.5); z-index:90; text-align:left; }
+.upload-fab-panel.dragover{ border-color:var(--gold); box-shadow:0 0 0 3px rgba(201,166,107,0.35), 0 8px 30px rgba(0,0,0,0.5); }
 .upload-fab-panel-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; color:var(--ivory); }
 @media (max-width:640px){ .upload-fab{ bottom:16px; right:16px; width:56px; height:56px; font-size:22px; } .upload-fab-panel{ bottom:84px; right:16px; left:16px; width:auto; } }
 
