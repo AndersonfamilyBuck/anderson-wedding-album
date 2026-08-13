@@ -51,8 +51,15 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '2.4';
+const CURRENT_VERSION = '2.5';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '2.5',
+    notes: [
+      'Every admin panel now has a "Close" button, so you don\'t have to scroll back up to hide it',
+      'Guest sign-up and last-login times now show the exact time, not just the date',
+    ],
+  },
   {
     version: '2.4',
     notes: [
@@ -2512,6 +2519,7 @@ export default function App() {
             {hasTutorial('messages') && (
               <button className="linklike tutorial-btn" onClick={() => openTutorial('messages')}>▶️ How-to</button>
             )}
+            <button className="linklike panel-close-btn" onClick={() => setShowMessagesPanel(false)}>Close</button>
           </h3>
           <div className="messages-layout">
             <div className="thread-list">
@@ -2668,6 +2676,7 @@ export default function App() {
             {hasTutorial('myphotos') && (
               <button className="linklike tutorial-btn" onClick={() => openTutorial('myphotos')}>▶️ How-to</button>
             )}
+            <button className="linklike panel-close-btn" onClick={() => setShowMyPhotosPanel(false)}>Close</button>
           </h3>
           <p className="photo-desc myphotos-explainer">
             This shows only what <strong>you've</strong> uploaded, so you can organize your own shots into folders.
@@ -2844,7 +2853,7 @@ export default function App() {
 
       {isAdmin && showLayoutPanel && (
         <div className="admin-panel" style={{ order: -10 }}>
-          <h3>Manage layout</h3>
+          <h3>Manage layout <button className="linklike panel-close-btn" onClick={() => setShowLayoutPanel(false)}>Close</button></h3>
           <p className="photo-desc">
             Choose what every guest sees first, and the order sections appear in when opened.
           </p>
@@ -2879,7 +2888,7 @@ export default function App() {
 
       {isAdmin && showManageTutorials && (
         <div className="admin-panel" style={{ order: -10 }}>
-          <h3>Tutorial videos</h3>
+          <h3>Tutorial videos <button className="linklike panel-close-btn" onClick={() => setShowManageTutorials(false)}>Close</button></h3>
           <p className="photo-desc">
             Two ways to teach a feature: upload a real screen-recorded video, or build a step-by-step
             "slideshow" out of a few screenshots with captions — often faster and just as clear.
@@ -3002,7 +3011,7 @@ export default function App() {
 
       {isAdmin && showAdminPanel && (
         <div className="admin-panel" style={{ order: -10 }}>
-          <h3>Guest list</h3>
+          <h3>Guest list <button className="linklike panel-close-btn" onClick={() => setShowAdminPanel(false)}>Close</button></h3>
           <div className="guest-rows">
             {guestList.map((g) => (
               <div className="guest-row" key={g.email}>
@@ -3011,12 +3020,13 @@ export default function App() {
                 {g.is_admin && <span className="admin-badge">admin</span>}
                 {g.is_disabled && <span className="disabled-badge">disabled</span>}
                 <span className="guest-activity">
+                  {g.invited_at && <>Invited {new Date(g.invited_at).toLocaleDateString()}</>}
                   {g.first_login_at ? (
-                    <>Signed up {new Date(g.first_login_at).toLocaleDateString()}</>
+                    <> · Signed up {new Date(g.first_login_at).toLocaleString()}</>
                   ) : (
-                    <>Invited{g.invited_at ? ` ${new Date(g.invited_at).toLocaleDateString()}` : ''}, not signed up yet</>
+                    <> · not signed up yet</>
                   )}
-                  {g.last_login_at && <> · Last login {new Date(g.last_login_at).toLocaleDateString()}</>}
+                  {g.last_login_at && <> · Last login {new Date(g.last_login_at).toLocaleString()}</>}
                   {' · '}{uploadCounts[g.email] || 0} upload{(uploadCounts[g.email] || 0) === 1 ? '' : 's'}
                 </span>
                 {g.email !== session.user.email && (
@@ -3055,7 +3065,7 @@ export default function App() {
 
       {isAdmin && showCategoryPanel && (
         <div className="admin-panel" style={{ order: -10 }}>
-          <h3>Categories</h3>
+          <h3>Categories <button className="linklike panel-close-btn" onClick={() => setShowCategoryPanel(false)}>Close</button></h3>
           <div className="photo-desc">Drag isn't available yet — use the arrows to set the order photos will follow when "By category order" is selected in the gallery.</div>
           <div className="guest-rows">
             {categories.map((c, i) => (
@@ -3078,7 +3088,7 @@ export default function App() {
 
       {isAdmin && showReorderPanel && (
         <div className="admin-panel reorder-panel" style={{ order: -10 }}>
-          <h3>Reorder photos</h3>
+          <h3>Reorder photos <button className="linklike panel-close-btn" onClick={() => setShowReorderPanel(false)}>Close</button></h3>
           <div className="photo-desc">
             Set one master order for every photo. This order is used by the gallery's "By category order" sort and by slideshows.
           </div>
@@ -3152,7 +3162,7 @@ export default function App() {
 
       {isAdmin && showRequestsPanel && (
         <div className="admin-panel" style={{ order: -10 }}>
-          <h3>Access requests</h3>
+          <h3>Access requests <button className="linklike panel-close-btn" onClick={() => setShowRequestsPanel(false)}>Close</button></h3>
           <div className="guest-rows">
             {pendingRequests.map((r) => (
               <div className="guest-row" key={r.id}>
@@ -3169,7 +3179,7 @@ export default function App() {
 
       {isAdmin && showTakedownPanel && (
         <div className="admin-panel" style={{ order: -10 }}>
-          <h3>Takedown requests</h3>
+          <h3>Takedown requests <button className="linklike panel-close-btn" onClick={() => setShowTakedownPanel(false)}>Close</button></h3>
           <p className="photo-desc">Guests can flag a photo they'd like removed. Nothing is deleted until you approve it here.</p>
           <div className="guest-rows takedown-list">
             {takedownRequests.map((r) => {
