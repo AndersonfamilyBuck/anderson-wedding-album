@@ -57,6 +57,8 @@ const CHANGELOG: { version: string; notes: string[] }[] = [
     version: '2.1',
     notes: [
       'A big "Add Your Photos & Videos" button now sits right at the top of the page, so it\'s impossible to miss on your first visit',
+      'New filter to show just photos, or just videos',
+      'Videos are now easier to spot in the gallery — a gold frame around the thumbnail, plus a brighter play icon',
     ],
   },
   {
@@ -188,6 +190,7 @@ export default function App() {
   const [categories, setCategories] = useState<{ id: string; name: string; sort_order: number | null }[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [mediaTypeFilter, setMediaTypeFilter] = useState<'all' | 'photo' | 'video'>('all');
   const [showCategoryPanel, setShowCategoryPanel] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [categoryError, setCategoryError] = useState('');
@@ -2101,6 +2104,9 @@ export default function App() {
     if (categoryFilter !== 'all') {
       list = list.filter((p) => (p.category || '') === categoryFilter);
     }
+    if (mediaTypeFilter !== 'all') {
+      list = list.filter((p) => p.media_type === mediaTypeFilter);
+    }
     if (searchText.trim()) {
       const q = searchText.trim().toLowerCase();
       list = list.filter(
@@ -2129,7 +2135,7 @@ export default function App() {
       list.sort((a, b) => a.uploader_name.localeCompare(b.uploader_name));
     }
     return list;
-  }, [photos, uploaderFilter, categoryFilter, searchText, sortOrder, categories]);
+  }, [photos, uploaderFilter, categoryFilter, mediaTypeFilter, searchText, sortOrder, categories]);
 
   // ---------------- Render ----------------
   if (sharedView.status === 'checking') {
@@ -3316,6 +3322,11 @@ export default function App() {
                 ))}
               </select>
             )}
+            <select value={mediaTypeFilter} onChange={(e) => setMediaTypeFilter(e.target.value as any)}>
+              <option value="all">Photos &amp; videos</option>
+              <option value="photo">📷 Photos only</option>
+              <option value="video">🎥 Videos only</option>
+            </select>
             <input
               className="search-input"
               placeholder="Search descriptions or names…"
@@ -3376,7 +3387,7 @@ export default function App() {
                         )}
                   <div className={'photo-card' + (selectMode && selectedPhotoIds.includes(p.id) ? ' selected' : '')}>
                     <div
-                      className="photo-frame"
+                      className={'photo-frame' + (p.media_type === 'video' ? ' video-frame' : '')}
                       onClick={() => {
                         if (selectMode) { togglePhotoSelected(p.id); return; }
                         if (editingPhotoId !== p.id) openLightbox(p);
