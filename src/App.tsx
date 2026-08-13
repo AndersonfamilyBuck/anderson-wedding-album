@@ -51,8 +51,14 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '2.5';
+const CURRENT_VERSION = '2.6';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '2.6',
+    notes: [
+      'While picking photos for a slideshow, the "Play selected" bar now stays fixed at the bottom of the screen, so you never have to scroll back up to it',
+    ],
+  },
   {
     version: '2.5',
     notes: [
@@ -3474,6 +3480,7 @@ export default function App() {
               </button>
             </div>
           )}
+          {selectMode && <div className="select-bar-spacer" />}
 
           <div className="gallery-wrap" style={{ order: sectionOrder.indexOf('gallery') }}>
             {loadingGallery ? (
