@@ -51,8 +51,14 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '2.6';
+const CURRENT_VERSION = '2.7';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '2.7',
+    notes: [
+      'Fixed a bug where regular guests\' sign-up and last-login times weren\'t being saved (only admin accounts were recording correctly before)',
+    ],
+  },
   {
     version: '2.6',
     notes: [
@@ -778,23 +784,10 @@ export default function App() {
       setOtpError(error.message);
       return;
     }
-    // Record login activity: set first_login_at only if it isn't set yet,
-    // and always update last_login_at to now.
-    const loginEmail = emailInput.trim();
-    const { data: existingGuest } = await supabase
-      .from('allowed_guests')
-      .select('first_login_at')
-      .eq('email', loginEmail)
-      .maybeSingle();
-    await supabase
-      .from('allowed_guests')
-      .update({
-        last_login_at: new Date().toISOString(),
-        ...(existingGuest && !existingGuest.first_login_at
-          ? { first_login_at: new Date().toISOString() }
-          : {}),
-      })
-      .eq('email', loginEmail);
+    // Record login activity (first login + last login) using a database
+    // function made specifically for this, since a regular guest updating
+    // their own row directly was being silently blocked.
+    await supabase.rpc('record_guest_login');
     // On success, Supabase's onAuthStateChange listener picks up the new session automatically.
   }
 
