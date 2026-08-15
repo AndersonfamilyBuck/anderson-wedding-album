@@ -2000,23 +2000,6 @@ export default function App() {
     openLightbox(list[nextIndex]);
   }
 
-  // Keyboard support for the photo/video viewer: Escape closes, Left/Right moves.
-  // Skipped while typing in a form field (e.g. the comment box or edit form) so
-  // arrow keys and Escape still behave normally there.
-  useEffect(() => {
-    if (!lightbox) return;
-    function handleKey(e: KeyboardEvent) {
-      const target = e.target as HTMLElement | null;
-      const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
-      if (isTyping) return;
-      if (e.key === 'Escape') { setLightbox(null); setLightboxUrl(''); }
-      else if (e.key === 'ArrowLeft') lightboxStep(-1);
-      else if (e.key === 'ArrowRight') lightboxStep(1);
-    }
-    window.addEventListener('keydown', handleKey);
-    return () => window.removeEventListener('keydown', handleKey);
-  }, [lightbox, filteredPhotos]);
-
   // ---- Photo selection (for building a custom slideshow) ----
   function togglePhotoSelected(id: string) {
     setSelectedPhotoIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -2241,6 +2224,24 @@ export default function App() {
     }
     return list;
   }, [photos, uploaderFilter, categoryFilter, mediaTypeFilter, searchText, sortOrder, categories]);
+
+  // Keyboard support for the photo/video viewer: Escape closes, Left/Right moves.
+  // Skipped while typing in a form field (e.g. the comment box or edit form) so
+  // arrow keys and Escape still behave normally there.
+  useEffect(() => {
+    if (!lightbox) return;
+    function handleKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (isTyping) return;
+      if (e.key === 'Escape') { setLightbox(null); setLightboxUrl(''); }
+      else if (e.key === 'ArrowLeft') lightboxStep(-1);
+      else if (e.key === 'ArrowRight') lightboxStep(1);
+    }
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [lightbox, filteredPhotos]);
+
 
   const categoryCounts = useMemo(() => {
     const counts: Record<string, number> = {};
