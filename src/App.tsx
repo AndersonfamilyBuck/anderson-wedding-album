@@ -51,8 +51,15 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '2.9';
+const CURRENT_VERSION = '3.0';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '3.0',
+    notes: [
+      'Admins now have a quick "🛠️ Admin" link in the account menu (tap your initial, top right) that jumps straight to the admin tools',
+      '"Browse the day" now only shows chapters that actually have photos in them — empty categories stay tucked away until someone uploads to them',
+    ],
+  },
   {
     version: '2.9',
     notes: [
@@ -506,6 +513,7 @@ export default function App() {
   const myPhotosPanelRef = useRef<HTMLDivElement>(null);
   const messagesPanelRef = useRef<HTMLDivElement>(null);
   const browseRef = useRef<HTMLDivElement>(null);
+  const adminToolsRef = useRef<HTMLDivElement>(null);
   const recentRef = useRef<HTMLDivElement>(null);
   const galleryRef = useRef<HTMLDivElement>(null);
 
@@ -2252,6 +2260,13 @@ export default function App() {
     return counts;
   }, [photos]);
 
+  // "Browse the day" only shows chapters that actually have photos in them —
+  // empty categories (e.g. ones created but not used yet) stay hidden from guests
+  // and only show up once someone uploads to them.
+  const categoriesWithPhotos = useMemo(() => {
+    return categories.filter((c) => (categoryCounts[c.name] || 0) > 0);
+  }, [categories, categoryCounts]);
+
   const categoryCoverPhoto = useMemo(() => {
     const covers: Record<string, PhotoRecord> = {};
     // Iterate oldest-first so the earliest upload in a category becomes its cover.
@@ -2432,6 +2447,18 @@ export default function App() {
                   >
                     🖼️ My photos
                   </button>
+                  {isAdmin && (
+                    <button
+                      className="account-menu-item"
+                      onClick={() => {
+                        setShowAccountMenu(false);
+                        setShowAdminToolsRow(true);
+                        scrollToPanel(adminToolsRef);
+                      }}
+                    >
+                      🛠️ Admin
+                    </button>
+                  )}
                   <div className="account-menu-divider" />
                   <button className="account-menu-item" onClick={() => supabase.auth.signOut()}>Sign out</button>
                 </div>
@@ -2451,7 +2478,7 @@ export default function App() {
         <button className="hero-cta" onClick={() => setShowUploadPanel(true)}>Add photos →</button>
       </div>
 
-      {categories.length > 0 && (
+      {categoriesWithPhotos.length > 0 && (
         <div ref={browseRef} className="category-grid">
           <div className="recent-grid-heading-row">
             <div className="category-grid-heading">Browse the day</div>
@@ -2460,7 +2487,7 @@ export default function App() {
             </button>
           </div>
           <div className="category-cards">
-            {categories.map((c) => {
+            {categoriesWithPhotos.map((c) => {
               const cover = categoryCoverPhoto[c.name];
               return (
                 <button
@@ -2514,7 +2541,7 @@ export default function App() {
       )}
 
       {isAdmin && (
-        <div className="admin-tools-row">
+        <div ref={adminToolsRef} className="admin-tools-row">
           <button className="linklike" onClick={() => setShowAdminToolsRow((v) => !v)}>
             {showAdminToolsRow ? '▴ Hide admin tools' : '▾ Admin tools'}
           </button>
