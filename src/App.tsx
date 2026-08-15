@@ -51,12 +51,13 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '2.7';
+const CURRENT_VERSION = '2.8';
 const CHANGELOG: { version: string; notes: string[] }[] = [
   {
-    version: '2.7',
+    version: '2.8',
     notes: [
-      'Fixed a bug where regular guests\' sign-up and last-login times weren\'t being saved (only admin accounts were recording correctly before)',
+      'New look for the home screen: a cleaner header bar up top, a welcoming hero section, "Browse the day" chapter cards you can tap to jump straight to photos from a category, and a "Recent memories" strip showing the newest uploads',
+      'What\'s new, How this works, My photos, and Sign out are now tucked into a small account menu (tap the circle with your initial, top right) to keep the top of the page less cluttered',
     ],
   },
   {
@@ -307,6 +308,7 @@ export default function App() {
 
   const [sectionOrder, setSectionOrder] = useState<string[]>(['showcase', 'gallery', 'messages', 'myphotos']);
   const [showUploadPanel, setShowUploadPanel] = useState(false);
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
 
   const TUTORIAL_KEYS: { key: string; label: string }[] = [
     { key: 'onboarding', label: 'Getting started (shown to brand-new sign-ups)' },
@@ -494,6 +496,9 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const myPhotosPanelRef = useRef<HTMLDivElement>(null);
   const messagesPanelRef = useRef<HTMLDivElement>(null);
+  const browseRef = useRef<HTMLDivElement>(null);
+  const recentRef = useRef<HTMLDivElement>(null);
+  const galleryRef = useRef<HTMLDivElement>(null);
 
   function scrollToPanel(ref: React.RefObject<HTMLDivElement>) {
     setTimeout(() => ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
@@ -2211,6 +2216,30 @@ export default function App() {
     return list;
   }, [photos, uploaderFilter, categoryFilter, mediaTypeFilter, searchText, sortOrder, categories]);
 
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    photos.forEach((p) => {
+      const key = p.category || 'Uncategorized';
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    return counts;
+  }, [photos]);
+
+  const categoryCoverPhoto = useMemo(() => {
+    const covers: Record<string, PhotoRecord> = {};
+    // Iterate oldest-first so the earliest upload in a category becomes its cover.
+    [...photos].reverse().forEach((p) => {
+      if (p.category && !covers[p.category]) covers[p.category] = p;
+    });
+    return covers;
+  }, [photos]);
+
+  const recentPhotos = useMemo(() => {
+    return [...photos]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 10);
+  }, [photos]);
+
   // ---------------- Render ----------------
   if (sharedView.status === 'checking') {
     return <div className="centered-msg">Loading…</div>;
@@ -2330,65 +2359,155 @@ export default function App() {
 
   return (
     <div className="app-shell">
-      <div className="topbar">
+      <header className="site-header">
+        <div className="site-header-inner">
+          <div className="site-logo">{CONFIG.COUPLE}'s Album</div>
+          <nav className="site-nav">
+            <button className="site-nav-link" onClick={() => scrollToPanel(browseRef)}>Browse the day</button>
+            <button
+              className="site-nav-link"
+              onClick={() => { setShowMessagesPanel(true); scrollToPanel(messagesPanelRef); }}
+            >
+              Family messages
+            </button>
+            {recentPhotos.length > 0 && (
+              <button className="site-nav-link" onClick={() => scrollToPanel(recentRef)}>Recent memories</button>
+            )}
+            <button className="site-nav-cta" onClick={() => setShowUploadPanel(true)}>Add photos</button>
+            <div className="account-menu-wrap">
+              <button className="account-menu-btn" onClick={() => setShowAccountMenu((v) => !v)} aria-label="Account menu">
+                {(session.user.user_metadata?.display_name || session.user.email || '?').charAt(0).toUpperCase()}
+              </button>
+              {showAccountMenu && (
+                <div className="account-menu-panel">
+                  <div className="account-menu-email">
+                    Signed in as {session.user.user_metadata?.display_name || session.user.email}
+                  </div>
+                  <div className="account-menu-divider" />
+                  <button
+                    className="account-menu-item"
+                    onClick={() => { setShowAccountMenu(false); openWhatsNew(); }}
+                  >
+                    🆕 What's new{hasUnseenUpdate && <span className="unseen-dot" />}
+                  </button>
+                  <button
+                    className="account-menu-item"
+                    onClick={() => { setShowAccountMenu(false); setShowHelpPanel((v) => !v); }}
+                  >
+                    ❓ How this works
+                  </button>
+                  <button
+                    className="account-menu-item"
+                    onClick={() => {
+                      setShowAccountMenu(false);
+                      setShowMyPhotosPanel((v) => { if (!v) scrollToPanel(myPhotosPanelRef); return !v; });
+                    }}
+                  >
+                    🖼️ My photos
+                  </button>
+                  <div className="account-menu-divider" />
+                  <button className="account-menu-item" onClick={() => supabase.auth.signOut()}>Sign out</button>
+                </div>
+              )}
+            </div>
+          </nav>
+        </div>
+      </header>
+
+      <div className="hero">
         <div className="eyebrow">Family album</div>
         <h1>{CONFIG.HEADLINE}</h1>
         <div className="date">{CONFIG.COUPLE} · {CONFIG.DATE}</div>
-        <div className="signed-in-as">
-          Signed in as {session.user.user_metadata?.display_name || session.user.email}
+        <div className="hero-tagline">
+          A shared album for our wedding day. Add your photos and videos, see what others have shared, and leave a message.
         </div>
-
-        <div className="nav-pills">
-          <button className={'nav-pill' + (hasUnseenUpdate ? ' has-unseen' : '')} onClick={openWhatsNew}>
-            🆕 What's new{hasUnseenUpdate && <span className="unseen-dot" />}
-          </button>
-          <button className="nav-pill" onClick={() => setShowHelpPanel((v) => !v)}>
-            {showHelpPanel ? '✕ Close help' : '❓ How this works'}
-          </button>
-          <button className={'nav-pill' + (showMessagesPanel ? ' active' : '')} onClick={() => { setShowMessagesPanel((v) => { if (!v) scrollToPanel(messagesPanelRef); return !v; }); }}>
-            💬 {showMessagesPanel ? 'Hide messages' : 'Messages'}
-          </button>
-          <button className={'nav-pill' + (showMyPhotosPanel ? ' active' : '')} onClick={() => { setShowMyPhotosPanel((v) => { if (!v) scrollToPanel(myPhotosPanelRef); return !v; }); }}>
-            🖼️ {showMyPhotosPanel ? 'Hide my photos' : 'My photos'}
-          </button>
-          <button className="nav-pill subtle" onClick={() => supabase.auth.signOut()}>
-            Sign out
-          </button>
-        </div>
-
-        {isAdmin && (
-          <div className="admin-tools-row">
-            <button className="linklike" onClick={() => setShowAdminToolsRow((v) => !v)}>
-              {showAdminToolsRow ? '▴ Hide admin tools' : '▾ Admin tools'}
-            </button>
-            {showAdminToolsRow && (
-              <div className="nav-pills admin-pills">
-                <button className={'nav-pill' + (showAdminPanel ? ' active' : '')} onClick={() => setShowAdminPanel((v) => !v)}>
-                  👥 {showAdminPanel ? 'Hide guest list' : 'Guest list'}
-                </button>
-                <button className={'nav-pill' + (showCategoryPanel ? ' active' : '')} onClick={() => setShowCategoryPanel((v) => !v)}>
-                  📁 {showCategoryPanel ? 'Hide categories' : 'Categories'}
-                </button>
-                <button className={'nav-pill' + (showRequestsPanel ? ' active' : '')} onClick={() => setShowRequestsPanel((v) => !v)}>
-                  📨 {showRequestsPanel ? 'Hide requests' : `Access requests${pendingRequests.length ? ` (${pendingRequests.length})` : ''}`}
-                </button>
-                <button className={'nav-pill' + (showTakedownPanel ? ' active' : '')} onClick={() => setShowTakedownPanel((v) => !v)}>
-                  🚩 {showTakedownPanel ? 'Hide takedown requests' : `Takedown requests${takedownRequests.length ? ` (${takedownRequests.length})` : ''}`}
-                </button>
-                <button className={'nav-pill' + (showLayoutPanel ? ' active' : '')} onClick={() => setShowLayoutPanel((v) => !v)}>
-                  ⚙️ {showLayoutPanel ? 'Hide layout settings' : 'Layout settings'}
-                </button>
-                <button className={'nav-pill' + (showManageTutorials ? ' active' : '')} onClick={() => setShowManageTutorials((v) => !v)}>
-                  🎬 {showManageTutorials ? 'Hide tutorial videos' : 'Tutorial videos'}
-                </button>
-                <button className={'nav-pill' + (showReorderPanel ? ' active' : '')} onClick={() => setShowReorderPanel((v) => !v)}>
-                  🔀 {showReorderPanel ? 'Hide reorder photos' : 'Reorder photos'}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+        <button className="hero-cta" onClick={() => setShowUploadPanel(true)}>Add photos →</button>
       </div>
+
+      {categories.length > 0 && (
+        <div ref={browseRef} className="category-grid">
+          <div className="category-grid-heading">Browse the day</div>
+          <div className="category-cards">
+            {categories.map((c) => {
+              const cover = categoryCoverPhoto[c.name];
+              return (
+                <button
+                  key={c.id}
+                  className="category-card"
+                  onClick={() => { setCategoryFilter(c.name); scrollToPanel(galleryRef); }}
+                >
+                  <div className="category-card-thumb">
+                    {cover && previewUrls[cover.id] ? (
+                      <img src={previewUrls[cover.id]} alt="" />
+                    ) : '📁'}
+                  </div>
+                  <div className="category-card-label">
+                    <div className="category-card-name">{c.name}</div>
+                    <div className="category-card-count">{categoryCounts[c.name] || 0} photos</div>
+                  </div>
+                </button>
+              );
+            })}
+            <button className="category-card add-photos-card" onClick={() => setShowUploadPanel(true)}>
+              <div className="category-card-label">
+                <div className="category-card-name">📸 Add photos</div>
+                <div className="category-card-count">Share yours</div>
+              </div>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {recentPhotos.length > 0 && (
+        <div ref={recentRef} className="recent-grid-section">
+          <div className="recent-grid-heading">Recent memories</div>
+          <div className="recent-grid">
+            {recentPhotos.map((p) => (
+              <div key={p.id} className="recent-grid-thumb" onClick={() => openLightbox(p)}>
+                {previewUrls[p.id] ? (
+                  <img src={previewUrls[p.id]} alt={p.description || 'wedding photo'} />
+                ) : (
+                  <div className="thumb-placeholder" />
+                )}
+                {p.media_type === 'video' && <div className="play-badge">▶</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {isAdmin && (
+        <div className="admin-tools-row">
+          <button className="linklike" onClick={() => setShowAdminToolsRow((v) => !v)}>
+            {showAdminToolsRow ? '▴ Hide admin tools' : '▾ Admin tools'}
+          </button>
+          {showAdminToolsRow && (
+            <div className="nav-pills admin-pills">
+              <button className={'nav-pill' + (showAdminPanel ? ' active' : '')} onClick={() => setShowAdminPanel((v) => !v)}>
+                👥 {showAdminPanel ? 'Hide guest list' : 'Guest list'}
+              </button>
+              <button className={'nav-pill' + (showCategoryPanel ? ' active' : '')} onClick={() => setShowCategoryPanel((v) => !v)}>
+                📁 {showCategoryPanel ? 'Hide categories' : 'Categories'}
+              </button>
+              <button className={'nav-pill' + (showRequestsPanel ? ' active' : '')} onClick={() => setShowRequestsPanel((v) => !v)}>
+                📨 {showRequestsPanel ? 'Hide requests' : `Access requests${pendingRequests.length ? ` (${pendingRequests.length})` : ''}`}
+              </button>
+              <button className={'nav-pill' + (showTakedownPanel ? ' active' : '')} onClick={() => setShowTakedownPanel((v) => !v)}>
+                🚩 {showTakedownPanel ? 'Hide takedown requests' : `Takedown requests${takedownRequests.length ? ` (${takedownRequests.length})` : ''}`}
+              </button>
+              <button className={'nav-pill' + (showLayoutPanel ? ' active' : '')} onClick={() => setShowLayoutPanel((v) => !v)}>
+                ⚙️ {showLayoutPanel ? 'Hide layout settings' : 'Layout settings'}
+              </button>
+              <button className={'nav-pill' + (showManageTutorials ? ' active' : '')} onClick={() => setShowManageTutorials((v) => !v)}>
+                🎬 {showManageTutorials ? 'Hide tutorial videos' : 'Tutorial videos'}
+              </button>
+              <button className={'nav-pill' + (showReorderPanel ? ' active' : '')} onClick={() => setShowReorderPanel((v) => !v)}>
+                🔀 {showReorderPanel ? 'Hide reorder photos' : 'Reorder photos'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {showHelpPanel && (
         <div className="admin-panel help-panel" style={{ order: -20 }}>
@@ -3416,7 +3535,7 @@ export default function App() {
             </div>
           )}
 
-          <div className="filters" style={{ order: sectionOrder.indexOf('gallery') }}>
+          <div ref={galleryRef} className="filters" style={{ order: sectionOrder.indexOf('gallery') }}>
             <select value={uploaderFilter} onChange={(e) => setUploaderFilter(e.target.value)}>
               <option value="all">Everyone</option>
               {uploaderNames.map((n) => (
