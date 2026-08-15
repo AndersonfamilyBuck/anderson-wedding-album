@@ -51,8 +51,15 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '2.8';
+const CURRENT_VERSION = '2.9';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '2.9',
+    notes: [
+      'Photo cards, the filter bar, and the photo viewer got a visual refresh to match the new Heirloom Album look — cleaner cards, rounded buttons, and a tidier toolbar',
+      'The photo/video viewer now supports the keyboard: press Escape to close, and the Left/Right arrow keys to move between photos',
+    ],
+  },
   {
     version: '2.8',
     notes: [
@@ -1990,6 +1997,23 @@ export default function App() {
     const nextIndex = (currentIndex + direction + list.length) % list.length;
     openLightbox(list[nextIndex]);
   }
+
+  // Keyboard support for the photo/video viewer: Escape closes, Left/Right moves.
+  // Skipped while typing in a form field (e.g. the comment box or edit form) so
+  // arrow keys and Escape still behave normally there.
+  useEffect(() => {
+    if (!lightbox) return;
+    function handleKey(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const isTyping = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+      if (isTyping) return;
+      if (e.key === 'Escape') { setLightbox(null); setLightboxUrl(''); }
+      else if (e.key === 'ArrowLeft') lightboxStep(-1);
+      else if (e.key === 'ArrowRight') lightboxStep(1);
+    }
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [lightbox, filteredPhotos]);
 
   // ---- Photo selection (for building a custom slideshow) ----
   function togglePhotoSelected(id: string) {
