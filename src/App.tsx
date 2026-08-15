@@ -58,6 +58,8 @@ const CHANGELOG: { version: string; notes: string[] }[] = [
     notes: [
       'Photo cards, the filter bar, and the photo viewer got a visual refresh to match the new Heirloom Album look — cleaner cards, rounded buttons, and a tidier toolbar',
       'The photo/video viewer now supports the keyboard: press Escape to close, and the Left/Right arrow keys to move between photos',
+      'Added a "View all photos" link under Browse the day and Recent memories, so it\'s easy to jump straight to the full searchable gallery',
+      'My Photos thumbnails now open the full photo viewer when tapped, with the same download, share, and delete options as the main gallery (this was missing before)',
     ],
   },
   {
@@ -2450,7 +2452,12 @@ export default function App() {
 
       {categories.length > 0 && (
         <div ref={browseRef} className="category-grid">
-          <div className="category-grid-heading">Browse the day</div>
+          <div className="recent-grid-heading-row">
+            <div className="category-grid-heading">Browse the day</div>
+            <button className="view-all-link" onClick={() => { setCategoryFilter('all'); scrollToPanel(galleryRef); }}>
+              View all photos →
+            </button>
+          </div>
           <div className="category-cards">
             {categories.map((c) => {
               const cover = categoryCoverPhoto[c.name];
@@ -2484,7 +2491,12 @@ export default function App() {
 
       {recentPhotos.length > 0 && (
         <div ref={recentRef} className="recent-grid-section">
-          <div className="recent-grid-heading">Recent memories</div>
+          <div className="recent-grid-heading-row">
+            <div className="recent-grid-heading">Recent memories</div>
+            <button className="view-all-link" onClick={() => { setCategoryFilter('all'); scrollToPanel(galleryRef); }}>
+              View all photos →
+            </button>
+          </div>
           <div className="recent-grid">
             {recentPhotos.map((p) => (
               <div key={p.id} className="recent-grid-thumb" onClick={() => openLightbox(p)}>
@@ -2970,6 +2982,7 @@ export default function App() {
                 className="myphotos-thumb"
                 draggable={!activeFolderId}
                 onDragStart={(e) => handlePhotoDragStart(e, p.id)}
+                onClick={() => openLightbox(p)}
               >
                 {previewUrls[p.id] ? (
                   <img src={previewUrls[p.id]} alt={p.description || 'photo'} />
@@ -2977,7 +2990,10 @@ export default function App() {
                   <div className="thumb-placeholder" />
                 )}
                 {activeFolderId && (
-                  <button className="linklike" onClick={() => removePhotoFromFolder(p.id, activeFolderId)}>
+                  <button
+                    className="linklike"
+                    onClick={(e) => { e.stopPropagation(); removePhotoFromFolder(p.id, activeFolderId); }}
+                  >
                     Remove from folder
                   </button>
                 )}
