@@ -51,8 +51,14 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '3.2';
+const CURRENT_VERSION = '3.3';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '3.3',
+    notes: [
+      '"Manage layout" now only lists Showcase feed and Gallery & filters — the two sections that are always visible on the page. Messages panel and My Photos panel were removed from this list since they\'re separate panels a guest opens from the account menu, not sections that sit in the page order, so reordering them never visibly did anything',
+    ],
+  },
   {
     version: '3.2',
     notes: [
@@ -335,7 +341,7 @@ export default function App() {
   const [outsideShareBusyId, setOutsideShareBusyId] = useState<string | null>(null);
   const [outsideShareUrl, setOutsideShareUrl] = useState<Record<string, string>>({});
 
-  const [sectionOrder, setSectionOrder] = useState<string[]>(['showcase', 'gallery', 'messages', 'myphotos']);
+  const [sectionOrder, setSectionOrder] = useState<string[]>(['showcase', 'gallery']);
   const [showUploadPanel, setShowUploadPanel] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [showMobileNav, setShowMobileNav] = useState(false);
@@ -1576,7 +1582,12 @@ export default function App() {
   }
 
   // ---- Site layout settings ----
-  const VALID_SECTIONS = ['showcase', 'gallery', 'messages', 'myphotos'];
+  // Only Showcase feed and Gallery & filters are always-visible sections that
+  // sit in the normal page flow — Messages panel and My Photos panel are
+  // toggle-only overlays a guest opens from the account menu, so they were
+  // never really "reorderable page sections" and are excluded here to avoid
+  // suggesting a reorder that has nothing visible to move.
+  const VALID_SECTIONS = ['showcase', 'gallery'];
   function normalizeSectionOrder(stored: string[]): string[] {
     const filtered = stored.filter((k) => VALID_SECTIONS.includes(k));
     const missing = VALID_SECTIONS.filter((k) => !filtered.includes(k));
@@ -1631,8 +1642,6 @@ export default function App() {
   const sectionLabels: Record<string, string> = {
     showcase: 'Showcase feed',
     gallery: 'Gallery & filters',
-    messages: 'Messages panel',
-    myphotos: 'My Photos panel',
   };
 
   const [inviteStatusByEmail, setInviteStatusByEmail] = useState<Record<string, 'idle' | 'sending' | 'sent' | 'error'>>({});
@@ -2738,7 +2747,7 @@ export default function App() {
       )}
 
       {showMessagesPanel && (
-        <div ref={messagesPanelRef} className="admin-panel messages-panel" style={{ order: sectionOrder.indexOf('messages') }}>
+        <div ref={messagesPanelRef} className="admin-panel messages-panel">
           <h3>Messages
             {hasTutorial('messages') && (
               <button className="linklike tutorial-btn" onClick={() => openTutorial('messages')}>▶️ How-to</button>
@@ -2895,7 +2904,7 @@ export default function App() {
       )}
 
       {showMyPhotosPanel && (
-        <div ref={myPhotosPanelRef} className="admin-panel myphotos-panel" style={{ order: sectionOrder.indexOf('myphotos') }}>
+        <div ref={myPhotosPanelRef} className="admin-panel myphotos-panel">
           <h3>My Photos
             {hasTutorial('myphotos') && (
               <button className="linklike tutorial-btn" onClick={() => openTutorial('myphotos')}>▶️ How-to</button>
@@ -3083,8 +3092,9 @@ export default function App() {
         <div className="admin-panel">
           <h3>Manage layout <button className="linklike panel-close-btn" onClick={() => setShowLayoutPanel(false)}>Close</button></h3>
           <p className="photo-desc">
-            The header, hero, "Browse the day," and "Recent memories" always appear at the top for every guest.
-            Use this to choose the order of the sections further down the page, below that.
+            The header, hero, "Browse the day," and "Recent memories" always appear at the top for every guest, and aren't affected by this.
+            Below that, choose whether the "Recent posts" feed or the main photo gallery shows first.
+            (Messages and My Photos are separate panels a guest opens from the account menu — they aren't page sections, so they're not part of this order.)
           </p>
 
           <div className="layout-sort-row">
