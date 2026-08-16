@@ -51,8 +51,14 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '3.0';
+const CURRENT_VERSION = '3.1';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '3.1',
+    notes: [
+      'Fixed the header on phones — the navigation links no longer wrap across several lines and block the top of the screen. They now tuck behind a menu (☰) button, matching how the header behaves on the desktop site',
+    ],
+  },
   {
     version: '3.0',
     notes: [
@@ -325,6 +331,7 @@ export default function App() {
   const [sectionOrder, setSectionOrder] = useState<string[]>(['showcase', 'gallery', 'messages', 'myphotos']);
   const [showUploadPanel, setShowUploadPanel] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [showMobileNav, setShowMobileNav] = useState(false);
 
   const TUTORIAL_KEYS: { key: string; label: string }[] = [
     { key: 'onboarding', label: 'Getting started (shown to brand-new sign-ups)' },
@@ -2404,18 +2411,46 @@ export default function App() {
       <header className="site-header">
         <div className="site-header-inner">
           <div className="site-logo">{CONFIG.COUPLE}'s Album</div>
-          <nav className="site-nav">
-            <button className="site-nav-link" onClick={() => scrollToPanel(browseRef)}>Browse the day</button>
+          <button
+            className="site-nav-toggle"
+            onClick={() => setShowMobileNav((v) => !v)}
+            aria-label="Menu"
+          >
+            {showMobileNav ? '✕' : '☰'}
+          </button>
+          <nav className={'site-nav' + (showMobileNav ? ' open' : '')}>
+            <div className="site-nav-links">
+              <button
+                className="site-nav-link"
+                onClick={() => { setShowMobileNav(false); scrollToPanel(browseRef); }}
+              >
+                Browse the day
+              </button>
+              <button
+                className="site-nav-link"
+                onClick={() => {
+                  setShowMobileNav(false);
+                  setShowMessagesPanel(true);
+                  scrollToPanel(messagesPanelRef);
+                }}
+              >
+                Family messages
+              </button>
+              {recentPhotos.length > 0 && (
+                <button
+                  className="site-nav-link"
+                  onClick={() => { setShowMobileNav(false); scrollToPanel(recentRef); }}
+                >
+                  Recent memories
+                </button>
+              )}
+            </div>
             <button
-              className="site-nav-link"
-              onClick={() => { setShowMessagesPanel(true); scrollToPanel(messagesPanelRef); }}
+              className="site-nav-cta"
+              onClick={() => { setShowMobileNav(false); setShowUploadPanel(true); }}
             >
-              Family messages
+              Add photos
             </button>
-            {recentPhotos.length > 0 && (
-              <button className="site-nav-link" onClick={() => scrollToPanel(recentRef)}>Recent memories</button>
-            )}
-            <button className="site-nav-cta" onClick={() => setShowUploadPanel(true)}>Add photos</button>
             <div className="account-menu-wrap">
               <button className="account-menu-btn" onClick={() => setShowAccountMenu((v) => !v)} aria-label="Account menu">
                 {(session.user.user_metadata?.display_name || session.user.email || '?').charAt(0).toUpperCase()}
