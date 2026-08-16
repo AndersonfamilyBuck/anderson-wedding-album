@@ -371,7 +371,9 @@ button{ font-family:'Source Sans 3', system-ui, sans-serif; cursor:pointer; }
 .site-header{ position:sticky; top:0; z-index:60; width:100%; background:var(--plum-soft); box-shadow:0 2px 12px rgba(0,0,0,0.25); }
 .site-header-inner{ max-width:1080px; margin:0 auto; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:14px 20px; flex-wrap:wrap; }
 .site-logo{ font-family:'Playfair Display', Georgia, serif; font-style:italic; font-weight:700; font-size:17px; color:#fff; white-space:nowrap; }
+.site-nav-toggle{ display:none; background:none; border:none; color:#fff; font-size:20px; cursor:pointer; padding:4px 8px; line-height:1; }
 .site-nav{ display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
+.site-nav-links{ display:flex; align-items:center; gap:18px; flex-wrap:wrap; }
 .site-nav-link{ background:none; border:none; color:rgba(255,250,242,0.82); font-family:'Source Sans 3', sans-serif; font-size:14px; cursor:pointer; padding:6px 2px; white-space:nowrap; }
 .site-nav-link:hover{ color:#fff; }
 .site-nav-cta{ background:var(--gold); color:var(--plum-deep); border:none; padding:9px 18px; border-radius:20px; font-family:'Source Sans 3', sans-serif; font-size:14px; font-weight:600; cursor:pointer; white-space:nowrap; }
@@ -384,6 +386,35 @@ button{ font-family:'Source Sans 3', system-ui, sans-serif; cursor:pointer; }
 .account-menu-divider{ height:1px; background:rgba(36,21,34,0.1); margin:4px 2px; }
 .account-menu-item{ display:block; width:100%; text-align:left; background:none; border:none; padding:9px 10px; border-radius:6px; font-family:'Source Sans 3', sans-serif; font-size:14px; color:var(--ink); cursor:pointer; }
 .account-menu-item:hover{ background:rgba(36,21,34,0.06); }
+
+/* ===== Mobile header collapse (v3.1) ===== */
+/* Below 768px, the "Browse the day / Family messages / Recent memories" links
+   tuck behind a hamburger toggle instead of wrapping across several lines and
+   pushing the sticky header to take up most of the screen. */
+@media (max-width:767px){
+  .site-header-inner{ flex-wrap:nowrap; padding:12px 16px; position:relative; }
+  .site-logo{ font-size:15px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .site-nav-toggle{ display:flex; align-items:center; justify-content:center; order:1; }
+  .site-nav{ flex-wrap:nowrap; gap:10px; order:2; }
+  .site-nav-links{ display:none; }
+  .site-nav.open .site-nav-links{
+    display:flex;
+    flex-direction:column;
+    align-items:flex-start;
+    gap:2px;
+    position:absolute;
+    top:100%;
+    left:0;
+    right:0;
+    background:var(--plum-soft);
+    padding:6px 16px 16px;
+    box-shadow:0 10px 24px rgba(0,0,0,0.3);
+    z-index:65;
+  }
+  .site-nav.open .site-nav-link{ width:100%; padding:10px 0; border-bottom:1px solid rgba(255,255,255,0.1); }
+  .site-nav-cta{ padding:8px 14px; font-size:13px; }
+  .account-menu-btn{ width:30px; height:30px; }
+}
 
 /* ===== Hero (v2.8) ===== */
 .hero{ position:relative; width:100%; overflow:hidden; padding:56px 24px 48px; text-align:center; background:radial-gradient(ellipse at top, #4d2f4a 0%, #382340 45%, #241522 100%); color:#fff; }
