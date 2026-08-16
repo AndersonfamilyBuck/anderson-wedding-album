@@ -51,8 +51,15 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '3.3';
+const CURRENT_VERSION = '3.4';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '3.4',
+    notes: [
+      '"Browse the day" is now called "Browse the category," to better match what it actually does — jump to photos in a specific category',
+      '"Browse the category" and "Recent memories" can now be reordered in Manage layout, alongside Showcase feed and Gallery & filters. Only the header and hero always stay fixed at the very top',
+    ],
+  },
   {
     version: '3.3',
     notes: [
@@ -341,7 +348,7 @@ export default function App() {
   const [outsideShareBusyId, setOutsideShareBusyId] = useState<string | null>(null);
   const [outsideShareUrl, setOutsideShareUrl] = useState<Record<string, string>>({});
 
-  const [sectionOrder, setSectionOrder] = useState<string[]>(['showcase', 'gallery']);
+  const [sectionOrder, setSectionOrder] = useState<string[]>(['browse', 'recent', 'showcase', 'gallery']);
   const [showUploadPanel, setShowUploadPanel] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [showMobileNav, setShowMobileNav] = useState(false);
@@ -1582,12 +1589,10 @@ export default function App() {
   }
 
   // ---- Site layout settings ----
-  // Only Showcase feed and Gallery & filters are always-visible sections that
-  // sit in the normal page flow — Messages panel and My Photos panel are
-  // toggle-only overlays a guest opens from the account menu, so they were
-  // never really "reorderable page sections" and are excluded here to avoid
-  // suggesting a reorder that has nothing visible to move.
-  const VALID_SECTIONS = ['showcase', 'gallery'];
+  // Reorderable, always-in-flow sections. (Messages panel and My Photos panel
+  // are excluded — they're toggle-only overlays a guest opens from the account
+  // menu, not sections that sit in the normal page order.)
+  const VALID_SECTIONS = ['browse', 'recent', 'showcase', 'gallery'];
   function normalizeSectionOrder(stored: string[]): string[] {
     const filtered = stored.filter((k) => VALID_SECTIONS.includes(k));
     const missing = VALID_SECTIONS.filter((k) => !filtered.includes(k));
@@ -1640,6 +1645,8 @@ export default function App() {
   }
 
   const sectionLabels: Record<string, string> = {
+    browse: 'Browse the category',
+    recent: 'Recent memories',
     showcase: 'Showcase feed',
     gallery: 'Gallery & filters',
   };
@@ -2283,7 +2290,7 @@ export default function App() {
     return counts;
   }, [photos]);
 
-  // "Browse the day" only shows chapters that actually have photos in them —
+  // "Browse the category" only shows chapters that actually have photos in them —
   // empty categories (e.g. ones created but not used yet) stay hidden from guests
   // and only show up once someone uploads to them.
   const categoriesWithPhotos = useMemo(() => {
@@ -2440,7 +2447,7 @@ export default function App() {
                 className="site-nav-link"
                 onClick={() => { setShowMobileNav(false); scrollToPanel(browseRef); }}
               >
-                Browse the day
+                Browse the category
               </button>
               <button
                 className="site-nav-link"
@@ -2530,9 +2537,9 @@ export default function App() {
       </div>
 
       {categoriesWithPhotos.length > 0 && (
-        <div ref={browseRef} className="category-grid">
+        <div ref={browseRef} className="category-grid" style={{ order: sectionOrder.indexOf('browse') }}>
           <div className="recent-grid-heading-row">
-            <div className="category-grid-heading">Browse the day</div>
+            <div className="category-grid-heading">Browse the category</div>
             <button className="view-all-link" onClick={() => { setCategoryFilter('all'); scrollToPanel(galleryRef); }}>
               View all photos →
             </button>
@@ -2569,7 +2576,7 @@ export default function App() {
       )}
 
       {recentPhotos.length > 0 && (
-        <div ref={recentRef} className="recent-grid-section">
+        <div ref={recentRef} className="recent-grid-section" style={{ order: sectionOrder.indexOf('recent') }}>
           <div className="recent-grid-heading-row">
             <div className="recent-grid-heading">Recent memories</div>
             <button className="view-all-link" onClick={() => { setCategoryFilter('all'); scrollToPanel(galleryRef); }}>
@@ -3092,8 +3099,8 @@ export default function App() {
         <div className="admin-panel">
           <h3>Manage layout <button className="linklike panel-close-btn" onClick={() => setShowLayoutPanel(false)}>Close</button></h3>
           <p className="photo-desc">
-            The header, hero, "Browse the day," and "Recent memories" always appear at the top for every guest, and aren't affected by this.
-            Below that, choose whether the "Recent posts" feed or the main photo gallery shows first.
+            The header and hero always appear at the very top for every guest, and aren't affected by this.
+            Below that, choose the order of "Browse the category," "Recent memories," the "Recent posts" feed, and the main photo gallery.
             (Messages and My Photos are separate panels a guest opens from the account menu — they aren't page sections, so they're not part of this order.)
           </p>
 
