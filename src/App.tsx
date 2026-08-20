@@ -107,8 +107,14 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '4.0';
+const CURRENT_VERSION = '4.1';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '4.1',
+    notes: [
+      'The last fix only protected the thumbnail-generation step from hanging forever — the actual file upload itself had no such protection. Now every step of uploading a photo or video (the upload, the preview, and saving it) has its own timeout, so a stalled connection surfaces a real error instead of an endless "Uploading..." with no way out',
+    ],
+  },
   {
     version: '4.0',
     notes: [
@@ -2095,6 +2101,21 @@ export default function App() {
     });
   }
 
+  // Wraps any promise so it can never hang forever — if it doesn't settle
+  // within `ms`, it rejects with a clear message instead of leaving the
+  // caller stuck waiting indefinitely (e.g. a stalled network request).
+  function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error(`${label} took too long and timed out. Check your connection and try again.`));
+      }, ms);
+      promise.then(
+        (value) => { clearTimeout(timer); resolve(value); },
+        (err) => { clearTimeout(timer); reject(err); }
+      );
+    });
+  }
+
   function captureVideoThumbnail(file: File): Promise<Blob> {
     return new Promise((resolve, reject) => {
       const video = document.createElement('video');
@@ -2186,10 +2207,16 @@ export default function App() {
         const ext = item.file.name.split('.').pop() || (isVideo ? 'mp4' : 'jpg');
         const originalPath = `${id}/original.${ext}`;
 
-        // Upload full-resolution original, untouched
-        const { error: origErr } = await supabase.storage
-          .from('originals')
-          .upload(originalPath, item.file, { contentType: resolveContentType(item.file) });
+        // Upload full-resolution original, untouched. Generous timeout since
+        // large video files can legitimately take a while on a slow
+        // connection — but it must still end eventually rather than hang.
+        const { error: origErr } = await withTimeout(
+          supabase.storage
+            .from('originals')
+            .upload(originalPath, item.file, { contentType: resolveContentType(item.file) }),
+          120000,
+          'Upload'
+        );
         if (origErr) throw origErr;
 
         // Generate + upload a preview (resized photo, or a captured video frame)
@@ -2199,23 +2226,29 @@ export default function App() {
             ? await captureVideoThumbnail(item.file)
             : await resizeImageToBlob(await fileToImageSource(item.file), MAX_PREVIEW_DIM, PREVIEW_QUALITY);
           previewPath = `${id}/preview.jpg`;
-          await supabase.storage
-            .from('previews')
-            .upload(previewPath, previewBlob, { contentType: 'image/jpeg' });
+          await withTimeout(
+            supabase.storage.from('previews').upload(previewPath, previewBlob, { contentType: 'image/jpeg' }),
+            20000,
+            'Preview upload'
+          );
         } catch (previewErr) {
           console.warn('Preview generation failed, continuing without it', previewErr);
           previewPath = null;
         }
 
-        const { error: insertErr } = await supabase.from('photos').insert({
-          uploader_email: session.user.email,
-          uploader_name: displayName,
-          media_type: mediaType,
-          description: item.description.trim(),
-          category: item.category || null,
-          original_path: originalPath,
-          preview_path: previewPath,
-        });
+        const { error: insertErr } = await withTimeout(
+          supabase.from('photos').insert({
+            uploader_email: session.user.email,
+            uploader_name: displayName,
+            media_type: mediaType,
+            description: item.description.trim(),
+            category: item.category || null,
+            original_path: originalPath,
+            preview_path: previewPath,
+          }),
+          20000,
+          'Save'
+        );
         if (insertErr) throw insertErr;
 
         succeededIds.push(item.id);
