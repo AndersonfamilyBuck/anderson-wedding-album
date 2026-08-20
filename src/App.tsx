@@ -107,8 +107,26 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '4.1';
+const CURRENT_VERSION = '4.4';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '4.4',
+    notes: [
+      'Found the same "videos playing on their own" bug in a second spot: the upload screen was also showing raw video files as thumbnails before you even hit Upload, which could make Safari try to play several videos at once while just staging them. Fixed the same way as the gallery — a proper video thumbnail that doesn\'t play until tapped',
+    ],
+  },
+  {
+    version: '4.3',
+    notes: [
+      'Fixed a serious bug: whenever a video was missing its thumbnail, the gallery was showing the raw video file as its "thumbnail image." Some browsers (notably Safari) will actually try to decode and play video content given to an image slot — with several such videos on one page, this could spike memory badly enough to crash the whole page. Videos without a thumbnail now correctly show a plain placeholder instead',
+    ],
+  },
+  {
+    version: '4.2',
+    notes: [
+      'Videos in the photo/video viewer no longer autoplay — they show a preview image and start when someone taps play. Browsing through several videos in a row (or on a slower connection) no longer starts streaming each one automatically',
+    ],
+  },
   {
     version: '4.1',
     notes: [
@@ -1040,6 +1058,16 @@ export default function App() {
 
     // fetch signed preview thumbnail urls
     for (const p of data as PhotoRecord[]) {
+      if (!p.preview_path && p.media_type === 'video') {
+        // No generated thumbnail exists for this video. Do NOT fall back to
+        // the raw video file as an image source — some browsers (notably
+        // Safari) will actually attempt to decode and play video content
+        // given to an <img> tag, and with several such videos on one page
+        // that can spike memory enough to get the whole page killed/reloaded.
+        // Leaving this unset means the UI shows its placeholder box instead,
+        // which is what already happens whenever previewUrls has no entry.
+        continue;
+      }
       const path = p.preview_path || p.original_path;
       const bucket = p.preview_path ? 'previews' : 'originals';
       const { data: signed } = await supabase.storage
@@ -3967,7 +3995,14 @@ export default function App() {
                     const uploadError = uploadErrors.find((e) => e.id === item.id);
                     return (
                       <div className={'pending-upload-row' + (uploadError ? ' upload-failed' : '')} key={item.id}>
-                        <img className="pending-upload-thumb" src={item.previewUrl} alt="" />
+                        <div className="pending-upload-thumb-wrap">
+                          {isVideoFile(item.file) ? (
+                            <video className="pending-upload-thumb" src={item.previewUrl} muted preload="metadata" />
+                          ) : (
+                            <img className="pending-upload-thumb" src={item.previewUrl} alt="" />
+                          )}
+                          {isVideoFile(item.file) && <div className="play-badge pending-upload-play-badge">▶</div>}
+                        </div>
                         <div className="pending-upload-fields">
                           <input
                             className="desc-input"
@@ -4262,7 +4297,12 @@ export default function App() {
           <div className="lightbox-inner" onClick={(e) => e.stopPropagation()}>
             {lightboxUrl ? (
               lightbox.media_type === 'video' ? (
-                <video src={lightboxUrl} controls autoPlay style={{ maxWidth: '100%', maxHeight: '78vh' }} />
+                <video
+                  src={lightboxUrl}
+                  controls
+                  poster={previewUrls[lightbox.id]}
+                  style={{ maxWidth: '100%', maxHeight: '78vh' }}
+                />
               ) : (
                 <img src={lightboxUrl} alt={lightbox.description || ''} />
               )
