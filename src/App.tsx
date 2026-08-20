@@ -107,8 +107,14 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '3.9';
+const CURRENT_VERSION = '4.0';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '4.0',
+    notes: [
+      'Fixed a bug where uploading certain videos could get stuck "Uploading..." forever with no error and no way to tell what happened. If the browser can\'t generate a preview thumbnail for a video within a few seconds, the upload now continues without one instead of hanging indefinitely',
+    ],
+  },
   {
     version: '3.9',
     notes: [
@@ -2095,6 +2101,21 @@ export default function App() {
       video.preload = 'metadata';
       video.muted = true;
       video.src = URL.createObjectURL(file);
+
+      // Some video formats/codecs can't be decoded well enough by every
+      // browser to grab a frame — when that happens, none of the events
+      // below ever fire and this would otherwise hang forever, freezing the
+      // whole upload. This timeout guarantees we always move on (without a
+      // thumbnail) instead of getting stuck.
+      const timeout = setTimeout(() => {
+        URL.revokeObjectURL(video.src);
+        reject(new Error('timed out generating a video thumbnail'));
+      }, 8000);
+      function settle(fn: () => void) {
+        clearTimeout(timeout);
+        fn();
+      }
+
       video.onloadeddata = () => {
         video.currentTime = Math.min(1, (video.duration || 1) / 2);
       };
@@ -2105,11 +2126,13 @@ export default function App() {
         const ctx = canvas.getContext('2d')!;
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         canvas.toBlob((blob) => {
-          URL.revokeObjectURL(video.src);
-          if (blob) resolve(blob); else reject(new Error('thumbnail failed'));
+          settle(() => {
+            URL.revokeObjectURL(video.src);
+            if (blob) resolve(blob); else reject(new Error('thumbnail failed'));
+          });
         }, 'image/jpeg', 0.75);
       };
-      video.onerror = () => reject(new Error('video load failed'));
+      video.onerror = () => settle(() => reject(new Error('video load failed')));
     });
   }
 
