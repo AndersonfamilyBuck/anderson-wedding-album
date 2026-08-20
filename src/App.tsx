@@ -25,7 +25,13 @@ function isAcceptedMediaFile(file: File): boolean {
 }
 
 const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
-  mov: 'video/quicktime',
+  // Chrome and Firefox generally refuse (or hang indefinitely on) videos
+  // labeled "video/quicktime" — only Safari plays that natively. Since most
+  // iPhone .mov videos use the same H.264/HEVC codec as .mp4, labeling them
+  // "video/mp4" lets non-Safari browsers actually play them, even though the
+  // container is technically QuickTime. Same idea as the HEIC workaround
+  // below for photos.
+  mov: 'video/mp4',
   mp4: 'video/mp4',
   m4v: 'video/x-m4v',
   webm: 'video/webm',
@@ -42,12 +48,15 @@ const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
   heif: 'image/heif',
 };
 // Some browser/OS combinations report an empty file.type for less common
-// formats (.mov from iPhones especially) — fall back to a guess from the
-// file extension so storage always gets a real content type rather than "".
+// formats (.mov from iPhones especially) — and for .mov specifically, we
+// deliberately override even a correctly-reported type, since "video/mp4"
+// plays far more reliably outside Safari than the technically-correct
+// "video/quicktime". Our own mapping wins when we have a deliberate answer;
+// the browser's reported type is only used as a fallback otherwise.
 function resolveContentType(file: File): string {
-  if (file.type) return file.type;
   const ext = file.name.split('.').pop()?.toLowerCase() || '';
-  return CONTENT_TYPE_BY_EXTENSION[ext] || 'application/octet-stream';
+  if (CONTENT_TYPE_BY_EXTENSION[ext]) return CONTENT_TYPE_BY_EXTENSION[ext];
+  return file.type || 'application/octet-stream';
 }
 
 interface PhotoRecord {
@@ -98,8 +107,14 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '3.8';
+const CURRENT_VERSION = '3.9';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '3.9',
+    notes: [
+      'Fixed videos getting stuck "loading" forever outside Safari — .mov uploads (the iPhone format) were being labeled in a way only Safari plays reliably; they now use a label that Chrome and Firefox handle correctly too. Note: this fixes new uploads going forward — a few already-uploaded test videos may need to be deleted and re-uploaded to pick up the fix',
+    ],
+  },
   {
     version: '3.8',
     notes: [
