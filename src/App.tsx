@@ -3,6 +3,53 @@ import { supabase } from './supabaseClient';
 
 type MediaType = 'photo' | 'video';
 
+// Some browsers don't reliably report file.type for every video format
+// (.mov from iPhones being the most common case — it can come through with
+// an empty type, or a type the browser doesn't recognize). Falling back to
+// the file extension catches those cases so a video never gets silently
+// mis-filed as a photo.
+const VIDEO_EXTENSIONS = ['mp4', 'mov', 'webm', 'avi', 'mkv', 'm4v', '3gp', 'wmv', 'ogv'];
+function isVideoFile(file: File): boolean {
+  if (file.type.startsWith('video/')) return true;
+  const ext = file.name.split('.').pop()?.toLowerCase() || '';
+  return VIDEO_EXTENSIONS.includes(ext);
+}
+const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'heic', 'heif', 'bmp', 'tiff', 'tif'];
+function isImageFile(file: File): boolean {
+  if (file.type.startsWith('image/')) return true;
+  const ext = file.name.split('.').pop()?.toLowerCase() || '';
+  return IMAGE_EXTENSIONS.includes(ext);
+}
+function isAcceptedMediaFile(file: File): boolean {
+  return isImageFile(file) || isVideoFile(file);
+}
+
+const CONTENT_TYPE_BY_EXTENSION: Record<string, string> = {
+  mov: 'video/quicktime',
+  mp4: 'video/mp4',
+  m4v: 'video/x-m4v',
+  webm: 'video/webm',
+  avi: 'video/x-msvideo',
+  mkv: 'video/x-matroska',
+  '3gp': 'video/3gpp',
+  wmv: 'video/x-ms-wmv',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  heic: 'image/heic',
+  heif: 'image/heif',
+};
+// Some browser/OS combinations report an empty file.type for less common
+// formats (.mov from iPhones especially) — fall back to a guess from the
+// file extension so storage always gets a real content type rather than "".
+function resolveContentType(file: File): string {
+  if (file.type) return file.type;
+  const ext = file.name.split('.').pop()?.toLowerCase() || '';
+  return CONTENT_TYPE_BY_EXTENSION[ext] || 'application/octet-stream';
+}
+
 interface PhotoRecord {
   id: string;
   uploader_email: string;
@@ -51,8 +98,32 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '3.4';
+const CURRENT_VERSION = '3.8';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '3.8',
+    notes: [
+      'Fixed .mov videos (the standard iPhone video format) sometimes failing to upload or getting mistaken for photos — some browsers don\'t reliably report the file type for .mov, so uploads now also check the file name as a backup',
+    ],
+  },
+  {
+    version: '3.7',
+    notes: [
+      'Fixed a bug where a failed upload (often large videos) would silently disappear with no explanation. Failed items now stay in the upload queue with a clear error message, and can be retried without re-selecting the file',
+    ],
+  },
+  {
+    version: '3.6',
+    notes: [
+      'Admins can now add a guest without an email address and generate a private, one-time sign-in link for them — share it by text or open it directly on their device. Built for elderly relatives and kids who don\'t have their own email',
+    ],
+  },
+  {
+    version: '3.5',
+    notes: [
+      'Any signed-in guest can now invite someone new — look for "✉️ Invite someone" in the account menu (tap your initial, top right). Fill in their name and email, and it goes to admins for approval in the same "Access requests" panel used today. Admins now also see who suggested each pending request',
+    ],
+  },
   {
     version: '3.4',
     notes: [
@@ -258,6 +329,7 @@ export default function App() {
     category: string;
   }
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
+  const [uploadErrors, setUploadErrors] = useState<{ id: string; name: string; message: string }[]>([]);
 
   const [uploaderFilter, setUploaderFilter] = useState('all');
   const [searchText, setSearchText] = useState('');
@@ -268,11 +340,15 @@ export default function App() {
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
-  const [guestList, setGuestList] = useState<{ email: string; name: string; is_admin: boolean; is_disabled: boolean; invited_at?: string | null; first_login_at?: string | null; last_login_at?: string | null }[]>([]);
+  const [guestList, setGuestList] = useState<{ email: string; name: string; is_admin: boolean; is_disabled: boolean; invited_at?: string | null; first_login_at?: string | null; last_login_at?: string | null; no_email?: boolean }[]>([]);
   const [uploadCounts, setUploadCounts] = useState<Record<string, number>>({});
   const [newGuestEmail, setNewGuestEmail] = useState('');
   const [newGuestName, setNewGuestName] = useState('');
   const [guestError, setGuestError] = useState('');
+  const [newGuestNoEmail, setNewGuestNoEmail] = useState(false);
+  const [guestLinkByEmail, setGuestLinkByEmail] = useState<Record<string, string>>({});
+  const [guestLinkStatusByEmail, setGuestLinkStatusByEmail] = useState<Record<string, 'idle' | 'generating' | 'copied' | 'error'>>({});
+  const [guestLinkErrorByEmail, setGuestLinkErrorByEmail] = useState<Record<string, string>>({});
 
   const [isDragOver, setIsDragOver] = useState(false);
 
@@ -295,8 +371,19 @@ export default function App() {
   const [requestSubmitted, setRequestSubmitted] = useState(false);
   const [requestError, setRequestError] = useState('');
 
-  const [pendingRequests, setPendingRequests] = useState<{ id: string; email: string; first_name: string; last_name: string; status: string }[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<{ id: string; email: string; first_name: string; last_name: string; status: string; requested_by?: string | null }[]>([]);
   const [showRequestsPanel, setShowRequestsPanel] = useState(false);
+
+  // ---- Guest-initiated "invite someone" (any signed-in guest, not just admins) ----
+  const [showInviteForm, setShowInviteForm] = useState(false);
+  const [inviteFirstName, setInviteFirstName] = useState('');
+  const [inviteLastName, setInviteLastName] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteError, setInviteError] = useState('');
+  const [inviteSubmitting, setInviteSubmitting] = useState(false);
+  const [inviteSubmitted, setInviteSubmitted] = useState(false);
+  const [invitedName, setInvitedName] = useState('');
+  const inviteFormRef = useRef<HTMLDivElement>(null);
 
   const [showMessagesPanel, setShowMessagesPanel] = useState(false);
   const [directory, setDirectory] = useState<DirectoryEntry[]>([]);
@@ -764,20 +851,70 @@ export default function App() {
   async function addGuest(e: React.FormEvent) {
     e.preventDefault();
     setGuestError('');
-    const email = newGuestEmail.trim().toLowerCase();
     const name = newGuestName.trim();
-    if (!email || !name) {
-      setGuestError('Enter both a name and email.');
+    if (!name) {
+      setGuestError('Enter a name.');
       return;
     }
-    const { error } = await supabase.from('allowed_guests').insert({ email, name, is_admin: false });
+    let email: string;
+    if (newGuestNoEmail) {
+      // No real email — generate a placeholder identifier just so Supabase
+      // Auth has something unique to attach a sign-in link to. Nobody ever
+      // sees or types this; the admin shares a generated link instead.
+      const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'guest';
+      const suffix = Math.random().toString(16).slice(2, 6);
+      email = `${slug}-${suffix}@guestlink.internal`;
+    } else {
+      email = newGuestEmail.trim().toLowerCase();
+      if (!email) {
+        setGuestError('Enter both a name and email, or check "No email" for someone without one.');
+        return;
+      }
+    }
+    const { error } = await supabase.from('allowed_guests').insert({ email, name, is_admin: false, no_email: newGuestNoEmail });
     if (error) {
       setGuestError(error.message);
       return;
     }
     setNewGuestEmail('');
     setNewGuestName('');
+    setNewGuestNoEmail(false);
     loadGuestInfo();
+  }
+
+  async function generateGuestLink(email: string) {
+    setGuestLinkStatusByEmail((prev) => ({ ...prev, [email]: 'generating' }));
+    setGuestLinkErrorByEmail((prev) => ({ ...prev, [email]: '' }));
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+      if (!token) throw new Error('You need to be signed in to do this.');
+      const res = await fetch('/api/generate-guest-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email }),
+      });
+      const body = await res.json();
+      if (!res.ok) throw new Error(body?.error || 'Could not generate a link.');
+      setGuestLinkByEmail((prev) => ({ ...prev, [email]: body.link }));
+      setGuestLinkStatusByEmail((prev) => ({ ...prev, [email]: 'idle' }));
+    } catch (err: any) {
+      setGuestLinkErrorByEmail((prev) => ({ ...prev, [email]: err?.message || 'Something went wrong.' }));
+      setGuestLinkStatusByEmail((prev) => ({ ...prev, [email]: 'error' }));
+    }
+  }
+
+  async function copyGuestLink(email: string) {
+    const link = guestLinkByEmail[email];
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      setGuestLinkStatusByEmail((prev) => ({ ...prev, [email]: 'copied' }));
+      setTimeout(() => setGuestLinkStatusByEmail((prev) => ({ ...prev, [email]: 'idle' })), 2000);
+    } catch {
+      // Clipboard access can fail in some browser contexts — the link is
+      // still visible on screen to copy manually.
+    }
   }
 
   async function removeGuest(email: string) {
@@ -1754,6 +1891,36 @@ export default function App() {
     setExistingRequest({ status: 'pending' });
   }
 
+  async function submitInviteRequest(e: React.FormEvent) {
+    e.preventDefault();
+    setInviteError('');
+    const first = inviteFirstName.trim();
+    const last = inviteLastName.trim();
+    const email = inviteEmail.trim();
+    if (!first || !last || !email) {
+      setInviteError('Enter their first name, last name, and email.');
+      return;
+    }
+    setInviteSubmitting(true);
+    const { error } = await supabase.from('access_requests').insert({
+      email,
+      first_name: first,
+      last_name: last,
+      requested_by: session.user.user_metadata?.display_name || session.user.email,
+    });
+    setInviteSubmitting(false);
+    if (error) {
+      setInviteError(error.message);
+      return;
+    }
+    setInviteSubmitted(true);
+    setInvitedName(first);
+    setInviteFirstName('');
+    setInviteLastName('');
+    setInviteEmail('');
+    if (isAdmin) loadPendingRequests();
+  }
+
   async function loadPendingRequests() {
     const { data, error } = await supabase
       .from('access_requests')
@@ -1953,17 +2120,29 @@ export default function App() {
       if (target) URL.revokeObjectURL(target.previewUrl);
       return prev.filter((p) => p.id !== id);
     });
+    setUploadErrors((prev) => prev.filter((e) => e.id !== id));
+  }
+
+  function describeUploadError(err: any): string {
+    const raw = (err?.message || err?.error_description || '').toString();
+    const status = err?.statusCode || err?.status;
+    if (status === 413 || status === '413' || /exceeded the maximum allowed size|payload too large/i.test(raw)) {
+      return 'This file is larger than the server currently allows. Try a shorter clip or lower resolution — or ask an admin to raise the file size limit for the "originals" bucket in Supabase (Storage → originals → Edit bucket).';
+    }
+    return raw || 'Something went wrong uploading this file. Please try again.';
   }
 
   async function uploadPendingFiles() {
     if (!pendingUploads.length || !session) return;
     const displayName = session.user.user_metadata?.display_name || session.user.email;
     const queue = [...pendingUploads];
+    const succeededIds: string[] = [];
 
     for (const item of queue) {
       setUploadingFiles((f) => [...f, item.file.name]);
+      setUploadErrors((prev) => prev.filter((e) => e.id !== item.id));
       try {
-        const isVideo = item.file.type.startsWith('video/');
+        const isVideo = isVideoFile(item.file);
         const mediaType: MediaType = isVideo ? 'video' : 'photo';
         const id = crypto.randomUUID();
         const ext = item.file.name.split('.').pop() || (isVideo ? 'mp4' : 'jpg');
@@ -1972,7 +2151,7 @@ export default function App() {
         // Upload full-resolution original, untouched
         const { error: origErr } = await supabase.storage
           .from('originals')
-          .upload(originalPath, item.file, { contentType: item.file.type });
+          .upload(originalPath, item.file, { contentType: resolveContentType(item.file) });
         if (origErr) throw origErr;
 
         // Generate + upload a preview (resized photo, or a captured video frame)
@@ -2000,15 +2179,25 @@ export default function App() {
           preview_path: previewPath,
         });
         if (insertErr) throw insertErr;
+
+        succeededIds.push(item.id);
+        URL.revokeObjectURL(item.previewUrl);
       } catch (err) {
         console.error('Upload failed for', item.file.name, err);
+        setUploadErrors((prev) => [
+          ...prev.filter((e) => e.id !== item.id),
+          { id: item.id, name: item.file.name, message: describeUploadError(err) },
+        ]);
       }
       setUploadingFiles((f) => f.filter((n) => n !== item.file.name));
-      URL.revokeObjectURL(item.previewUrl);
     }
-    setPendingUploads([]);
+    // Only clear items that actually succeeded — anything that failed stays
+    // in the queue (with its error shown) so it's easy to see what didn't
+    // go through and retry, instead of silently disappearing.
+    setPendingUploads((prev) => prev.filter((p) => !succeededIds.includes(p.id)));
     loadPhotos();
   }
+
 
   async function openLightbox(p: PhotoRecord) {
     setLightbox(p);
@@ -2505,6 +2694,18 @@ export default function App() {
                   >
                     🖼️ My photos
                   </button>
+                  <button
+                    className="account-menu-item"
+                    onClick={() => {
+                      setShowAccountMenu(false);
+                      setInviteSubmitted(false);
+                      setInviteError('');
+                      setShowInviteForm(true);
+                      scrollToPanel(inviteFormRef);
+                    }}
+                  >
+                    ✉️ Invite someone
+                  </button>
                   {isAdmin && (
                     <button
                       className="account-menu-item"
@@ -2731,6 +2932,35 @@ export default function App() {
           </div>
 
           <button className="linklike" onClick={() => setShowHelpPanel(false)}>Got it, close this</button>
+        </div>
+      )}
+
+      {showInviteForm && (
+        <div ref={inviteFormRef} className="admin-panel">
+          <h3>Invite someone <button className="linklike panel-close-btn" onClick={() => setShowInviteForm(false)}>Close</button></h3>
+          {inviteSubmitted ? (
+            <>
+              <p className="photo-desc">
+                Thanks! We've let an admin know — once they approve it, {invitedName || 'they'} will be able to sign in.
+              </p>
+              <button className="linklike" onClick={() => { setInviteSubmitted(false); setShowInviteForm(false); }}>Close</button>
+            </>
+          ) : (
+            <>
+              <p className="photo-desc">
+                Know someone who should be part of the family album? Fill in their name and email — an admin will review it before they're added.
+              </p>
+              <form className="add-guest-form" onSubmit={submitInviteRequest}>
+                <input placeholder="Their first name" value={inviteFirstName} onChange={(e) => setInviteFirstName(e.target.value)} />
+                <input placeholder="Their last name" value={inviteLastName} onChange={(e) => setInviteLastName(e.target.value)} />
+                <input type="email" placeholder="Their email address" value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
+                <button className="btn-upload" type="submit" disabled={inviteSubmitting}>
+                  {inviteSubmitting ? 'Sending…' : 'Send invite request'}
+                </button>
+              </form>
+              {inviteError && <div className="gate-error">{inviteError}</div>}
+            </>
+          )}
         </div>
       )}
 
@@ -3262,7 +3492,8 @@ export default function App() {
             {guestList.map((g) => (
               <div className="guest-row" key={g.email}>
                 <span className="guest-name">{g.name}</span>
-                <span className="guest-email">{g.email}</span>
+                <span className="guest-email">{g.no_email ? 'No email on file' : g.email}</span>
+                {g.no_email && <span className="disabled-badge">no email</span>}
                 {g.is_admin && <span className="admin-badge">admin</span>}
                 {g.is_disabled && <span className="disabled-badge">disabled</span>}
                 <span className="guest-activity">
@@ -3277,17 +3508,27 @@ export default function App() {
                 </span>
                 {g.email !== session.user.email && (
                   <>
-                    <button
-                      className="toggle-btn"
-                      onClick={() => inviteGuest(g.email, g.name)}
-                      disabled={inviteStatusByEmail[g.email] === 'sending'}
-                    >
-                      {inviteStatusByEmail[g.email] === 'sending'
-                        ? 'Sending…'
-                        : inviteStatusByEmail[g.email] === 'sent'
-                        ? 'Sent!'
-                        : 'Resend invite'}
-                    </button>
+                    {g.no_email ? (
+                      <button
+                        className="toggle-btn"
+                        onClick={() => generateGuestLink(g.email)}
+                        disabled={guestLinkStatusByEmail[g.email] === 'generating'}
+                      >
+                        {guestLinkStatusByEmail[g.email] === 'generating' ? 'Generating…' : 'Generate sign-in link'}
+                      </button>
+                    ) : (
+                      <button
+                        className="toggle-btn"
+                        onClick={() => inviteGuest(g.email, g.name)}
+                        disabled={inviteStatusByEmail[g.email] === 'sending'}
+                      >
+                        {inviteStatusByEmail[g.email] === 'sending'
+                          ? 'Sending…'
+                          : inviteStatusByEmail[g.email] === 'sent'
+                          ? 'Sent!'
+                          : 'Resend invite'}
+                      </button>
+                    )}
                     <button className="toggle-btn" onClick={() => toggleGuestAdmin(g.email, g.is_admin)}>
                       {g.is_admin ? 'Remove admin' : 'Make admin'}
                     </button>
@@ -3297,15 +3538,42 @@ export default function App() {
                     <button className="remove-btn" onClick={() => removeGuest(g.email)}>Remove</button>
                   </>
                 )}
+                {g.no_email && guestLinkByEmail[g.email] && (
+                  <div className="guest-link-row">
+                    <input readOnly value={guestLinkByEmail[g.email]} onFocus={(e) => e.currentTarget.select()} />
+                    <button className="toggle-btn" onClick={() => copyGuestLink(g.email)}>
+                      {guestLinkStatusByEmail[g.email] === 'copied' ? 'Copied!' : 'Copy link'}
+                    </button>
+                  </div>
+                )}
+                {g.no_email && guestLinkErrorByEmail[g.email] && (
+                  <div className="gate-error">{guestLinkErrorByEmail[g.email]}</div>
+                )}
               </div>
             ))}
           </div>
           <form className="add-guest-form" onSubmit={addGuest}>
             <input placeholder="Name" value={newGuestName} onChange={(e) => setNewGuestName(e.target.value)} />
-            <input placeholder="Email" type="email" value={newGuestEmail} onChange={(e) => setNewGuestEmail(e.target.value)} />
+            {!newGuestNoEmail && (
+              <input placeholder="Email" type="email" value={newGuestEmail} onChange={(e) => setNewGuestEmail(e.target.value)} />
+            )}
+            <label className="guest-no-email-toggle">
+              <input
+                type="checkbox"
+                checked={newGuestNoEmail}
+                onChange={(e) => setNewGuestNoEmail(e.target.checked)}
+              />
+              No email — I'll share a sign-in link instead
+            </label>
             <button className="btn-upload" type="submit">Add to guest list</button>
           </form>
           {guestError && <div className="gate-error">{guestError}</div>}
+          {newGuestNoEmail && (
+            <p className="photo-desc">
+              After adding them, click "Generate sign-in link" next to their name, then share the link by text or open it directly on their device.
+              It's a one-time link — if it expires before they use it, just generate a new one.
+            </p>
+          )}
         </div>
       )}
 
@@ -3412,7 +3680,10 @@ export default function App() {
           <div className="guest-rows">
             {pendingRequests.map((r) => (
               <div className="guest-row" key={r.id}>
-                <span className="guest-name">{r.first_name} {r.last_name}</span>
+                <span className="guest-name">
+                  {r.first_name} {r.last_name}
+                  {r.requested_by && <span className="guest-email"> · invited by {r.requested_by}</span>}
+                </span>
                 <span className="guest-email">{r.email}</span>
                 <button className="toggle-btn" onClick={() => approveRequest(r)}>Approve</button>
                 <button className="remove-btn" onClick={() => denyRequest(r)}>Deny</button>
@@ -3486,9 +3757,7 @@ export default function App() {
               e.preventDefault();
               setIsDragOver(false);
               setShowUploadPanel(true);
-              const files = Array.from(e.dataTransfer.files || []).filter(
-                (f) => f.type.startsWith('image/') || f.type.startsWith('video/')
-              );
+              const files = Array.from(e.dataTransfer.files || []).filter(isAcceptedMediaFile);
               handleFiles(files);
             }}
           >
@@ -3591,9 +3860,7 @@ export default function App() {
               onDrop={(e) => {
                 e.preventDefault();
                 setIsDragOver(false);
-                const files = Array.from(e.dataTransfer.files || []).filter(
-                  (f) => f.type.startsWith('image/') || f.type.startsWith('video/')
-                );
+                const files = Array.from(e.dataTransfer.files || []).filter(isAcceptedMediaFile);
                 handleFiles(files);
               }}
             >
@@ -3625,32 +3892,36 @@ export default function App() {
               {pendingUploads.length > 0 && (
                 <div className="pending-uploads">
                   <div className="photo-desc">Add a description and category for each one, then upload.</div>
-                  {pendingUploads.map((item) => (
-                    <div className="pending-upload-row" key={item.id}>
-                      <img className="pending-upload-thumb" src={item.previewUrl} alt="" />
-                      <div className="pending-upload-fields">
-                        <input
-                          className="desc-input"
-                          placeholder="Description (optional)"
-                          value={item.description}
-                          onChange={(e) => updatePendingUpload(item.id, { description: e.target.value })}
-                        />
-                        {categories.length > 0 && (
-                          <select
+                  {pendingUploads.map((item) => {
+                    const uploadError = uploadErrors.find((e) => e.id === item.id);
+                    return (
+                      <div className={'pending-upload-row' + (uploadError ? ' upload-failed' : '')} key={item.id}>
+                        <img className="pending-upload-thumb" src={item.previewUrl} alt="" />
+                        <div className="pending-upload-fields">
+                          <input
                             className="desc-input"
-                            value={item.category}
-                            onChange={(e) => updatePendingUpload(item.id, { category: e.target.value })}
-                          >
-                            <option value="">No category</option>
-                            {categories.map((c) => (
-                              <option key={c.id} value={c.name}>{c.name}</option>
-                            ))}
-                          </select>
-                        )}
+                            placeholder="Description (optional)"
+                            value={item.description}
+                            onChange={(e) => updatePendingUpload(item.id, { description: e.target.value })}
+                          />
+                          {categories.length > 0 && (
+                            <select
+                              className="desc-input"
+                              value={item.category}
+                              onChange={(e) => updatePendingUpload(item.id, { category: e.target.value })}
+                            >
+                              <option value="">No category</option>
+                              {categories.map((c) => (
+                                <option key={c.id} value={c.name}>{c.name}</option>
+                              ))}
+                            </select>
+                          )}
+                          {uploadError && <div className="gate-error upload-error-msg">{uploadError.message}</div>}
+                        </div>
+                        <button className="remove-btn" onClick={() => removePendingUpload(item.id)}>✕</button>
                       </div>
-                      <button className="remove-btn" onClick={() => removePendingUpload(item.id)}>✕</button>
-                    </div>
-                  ))}
+                    );
+                  })}
                   <button className="btn-upload" onClick={uploadPendingFiles} disabled={uploadingFiles.length > 0}>
                     Upload {pendingUploads.length} item{pendingUploads.length === 1 ? '' : 's'}
                   </button>
