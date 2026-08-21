@@ -73,6 +73,7 @@ button{ font-family:'Source Sans 3', system-ui, sans-serif; cursor:pointer; }
 .btn-upload{ background:var(--gold); color:var(--plum-deep); border:none; padding:11px 22px; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer; }
 .btn-upload:hover{ background:var(--rose); }
 .upload-status{ text-align:center; margin-top:10px; font-family:'Source Sans 3', sans-serif; font-size:12px; color:#8B9B82; }
+.upload-status-hint{ text-align:center; margin-top:4px; font-family:'Source Sans 3', sans-serif; font-size:11px; color:rgba(40,38,42,0.55); }
 
 .filters{ width:calc(100% - 48px); max-width:1080px; margin:0 auto; padding:14px 16px; display:flex; align-items:center; gap:10px 12px; flex-wrap:wrap; background:#ffffff; border:1px solid rgba(36,21,34,0.1); border-radius:12px; box-shadow:0 4px 16px rgba(36,21,34,0.06); }
 .filters select, .search-input{ height:40px; padding:0 12px; border-radius:8px; border:1px solid rgba(36,21,34,0.16); background:#ffffff; color:var(--ink); font-size:13px; transition:border-color 0.15s; }
