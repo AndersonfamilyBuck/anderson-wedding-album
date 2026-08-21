@@ -107,8 +107,16 @@ const CONFIG = {
 
 // Bump CURRENT_VERSION and add a new entry (newest first) any time a real update ships.
 // Guests see a "🆕 What's New" badge until they've opened the panel for that version.
-const CURRENT_VERSION = '4.4';
+const CURRENT_VERSION = '4.5';
 const CHANGELOG: { version: string; notes: string[] }[] = [
+  {
+    version: '4.5',
+    notes: [
+      'Fixed "Share" (sending a photo in Messages) and "Get outside link" both failing silently with no explanation when something went wrong — they now show a real error message instead of just doing nothing',
+      'Outside links now stay valid for about a year instead of quietly expiring after 30 days, since the link is meant to feel permanent',
+      'Added a note during upload reminding people to keep the tab open and their phone unlocked — switching apps or locking the screen can pause a large video mid-upload on some phones',
+    ],
+  },
   {
     version: '4.4',
     notes: [
@@ -479,6 +487,8 @@ export default function App() {
   const [sharePhotoSentId, setSharePhotoSentId] = useState<string | null>(null);
   const [outsideShareBusyId, setOutsideShareBusyId] = useState<string | null>(null);
   const [outsideShareUrl, setOutsideShareUrl] = useState<Record<string, string>>({});
+  const [outsideShareError, setOutsideShareError] = useState<Record<string, string>>({});
+  const [sharePhotoError, setSharePhotoError] = useState<Record<string, string>>({});
 
   const [sectionOrder, setSectionOrder] = useState<string[]>(['browse', 'recent', 'showcase', 'gallery']);
   const [showUploadPanel, setShowUploadPanel] = useState(false);
@@ -1107,6 +1117,7 @@ export default function App() {
 
   async function sharePhotoInMessages(photoId: string, target: string) {
     if (!target) return;
+    setSharePhotoError((prev) => ({ ...prev, [photoId]: '' }));
     const [targetType, targetValue] = target.split(':');
     const row: any = {
       sender_email: session.user.email,
@@ -1119,16 +1130,25 @@ export default function App() {
     if (!error) {
       setSharePhotoSentId(photoId);
       setSharePhotoTarget('');
+    } else {
+      setSharePhotoError((prev) => ({ ...prev, [photoId]: error.message || 'Could not send. Please try again.' }));
     }
   }
 
   async function createOutsideShareLink(photo: PhotoRecord) {
     setOutsideShareBusyId(photo.id);
+    setOutsideShareError((prev) => ({ ...prev, [photo.id]: '' }));
     const path = photo.preview_path || photo.original_path;
     const bucket = photo.preview_path ? 'previews' : 'originals';
-    const { data: signed } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24 * 30);
+    const { data: signed, error: signError } = await supabase.storage
+      .from(bucket)
+      .createSignedUrl(path, 60 * 60 * 24 * 365); // ~1 year, so a link that looks permanent doesn't quietly expire after a month
     if (!signed?.signedUrl) {
       setOutsideShareBusyId(null);
+      setOutsideShareError((prev) => ({
+        ...prev,
+        [photo.id]: signError?.message || 'Could not create a link for this file.',
+      }));
       return;
     }
     const { data, error } = await supabase
@@ -1143,7 +1163,13 @@ export default function App() {
       .select()
       .single();
     setOutsideShareBusyId(null);
-    if (error || !data) return;
+    if (error || !data) {
+      setOutsideShareError((prev) => ({
+        ...prev,
+        [photo.id]: error?.message || 'Could not save this share link. Please try again.',
+      }));
+      return;
+    }
     const shareUrl = `${CONFIG.SITE_URL}?share=${data.id}`;
     setOutsideShareUrl((prev) => ({ ...prev, [photo.id]: shareUrl }));
     try {
@@ -4035,7 +4061,13 @@ export default function App() {
               )}
 
               {uploadingFiles.length > 0 && (
-                <div className="upload-status">Uploading {uploadingFiles.join(', ')}…</div>
+                <>
+                  <div className="upload-status">Uploading {uploadingFiles.join(', ')}…</div>
+                  <div className="upload-status-hint">
+                    Keep this tab open and your phone unlocked until it finishes — switching apps or locking your
+                    screen can pause a large video mid-upload.
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -4244,6 +4276,7 @@ export default function App() {
                               </button>
                             </div>
                             {sharePhotoSentId === p.id && <div className="photo-desc">Sent! They'll see it in Messages.</div>}
+                            {sharePhotoError[p.id] && <div className="gate-error">{sharePhotoError[p.id]}</div>}
                             <button
                               className="linklike"
                               disabled={outsideShareBusyId === p.id}
@@ -4257,6 +4290,7 @@ export default function App() {
                                 <div className="photo-desc">Copied! Anyone with this link can view just this photo — no sign-in needed.</div>
                               </div>
                             )}
+                            {outsideShareError[p.id] && <div className="gate-error">{outsideShareError[p.id]}</div>}
                           </div>
                         )}
                         {canEditOrDelete(p) && (
@@ -4365,6 +4399,7 @@ export default function App() {
                   </button>
                 </div>
                 {sharePhotoSentId === lightbox.id && <div className="photo-desc">Sent! They'll see it in Messages.</div>}
+                {sharePhotoError[lightbox.id] && <div className="gate-error">{sharePhotoError[lightbox.id]}</div>}
                 <button
                   className="linklike"
                   disabled={outsideShareBusyId === lightbox.id}
@@ -4378,6 +4413,7 @@ export default function App() {
                     <div className="photo-desc">Copied! Anyone with this link can view just this photo — no sign-in needed.</div>
                   </div>
                 )}
+                {outsideShareError[lightbox.id] && <div className="gate-error">{outsideShareError[lightbox.id]}</div>}
               </div>
             )}
 
